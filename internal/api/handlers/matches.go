@@ -222,6 +222,7 @@ func (h *MatchHandler) GetMatchAnswers(c *gin.Context) {
 	// Check match exists
 	match, err := h.repos.Matches.GetByID(c.Request.Context(), matchID)
 	if err != nil {
+		log.Printf("GetMatchAnswers: failed to fetch match %d: %v", matchID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch match"})
 		return
 	}
@@ -232,6 +233,7 @@ func (h *MatchHandler) GetMatchAnswers(c *gin.Context) {
 
 	answers, err := h.repos.Answers.GetByMatch(c.Request.Context(), matchID)
 	if err != nil {
+		log.Printf("GetMatchAnswers: failed to fetch answers for match %d: %v", matchID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch answers"})
 		return
 	}
