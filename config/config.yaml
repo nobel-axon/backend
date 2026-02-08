@@ -1,0 +1,45 @@
+# axon-server configuration
+
+port: "8080"
+
+database:
+  host: localhost
+  port: 5432
+  name: axon
+  user: axon
+  password: "axon"
+  sslMode: disable
+  maxOpenConns: 25
+  maxIdleConns: 5
+  connMaxLifetime: 5m
+
+chief:
+  url: "http://localhost:9100"
+  timeoutMs: 5000
+  retryCount: 3
+  retryDelayMs: 500
+
+poller:
+  enabled: true
+  intervalMs: 500
+  batchSize: 100
+
+websocket:
+  readBufferSize: 1024
+  writeBufferSize: 1024
+  pingInterval: 30s
+  pongTimeout: 60s
+  writeTimeout: 10s
+
+cors:
+  allowedOrigins:
+    - "*"
+  allowedMethods:
+    - GET
+    - POST
+    - OPTIONS
+  allowedHeaders:
+    - Origin
+    - Content-Type
+    - Accept
+    - Authorization
