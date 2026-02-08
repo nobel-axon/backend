@@ -57,6 +57,7 @@ func (h *MatchHandler) ListMatches(c *gin.Context) {
 
 	matches, err := h.repos.Matches.List(ctx, params)
 	if err != nil {
+		log.Printf("ListMatches: failed to fetch matches: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch matches"})
 		return
 	}
@@ -64,6 +65,7 @@ func (h *MatchHandler) ListMatches(c *gin.Context) {
 	// Get actual total count for pagination
 	total, err := h.repos.Matches.CountWithFilter(ctx, params.Phase)
 	if err != nil {
+		log.Printf("ListMatches: failed to count matches (phase=%s): %v", params.Phase, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count matches"})
 		return
 	}
@@ -117,6 +119,7 @@ func (h *MatchHandler) GetMatch(c *gin.Context) {
 
 	match, err := h.repos.Matches.GetByID(ctx, matchID)
 	if err != nil {
+		log.Printf("GetMatch: failed to fetch match %d: %v", matchID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch match"})
 		return
 	}
@@ -158,6 +161,7 @@ func (h *MatchHandler) GetMatchPersonalities(c *gin.Context) {
 
 	mp, err := h.repos.Personalities.GetByMatch(ctx, matchID)
 	if err != nil {
+		log.Printf("GetMatchPersonalities: failed to fetch personalities for match %d: %v", matchID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch personalities"})
 		return
 	}
@@ -180,6 +184,7 @@ func (h *MatchHandler) GetOpenMatches(c *gin.Context) {
 
 	matches, err := h.repos.Matches.GetOpenMatches(ctx)
 	if err != nil {
+		log.Printf("GetOpenMatches: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch open matches"})
 		return
 	}
@@ -199,6 +204,7 @@ func (h *MatchHandler) GetLiveMatches(c *gin.Context) {
 
 	matches, err := h.repos.Matches.GetLiveMatches(ctx)
 	if err != nil {
+		log.Printf("GetLiveMatches: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch live matches"})
 		return
 	}
@@ -257,6 +263,7 @@ func (h *MatchHandler) GetMatchCommentary(c *gin.Context) {
 	// Check match exists
 	match, err := h.repos.Matches.GetByID(c.Request.Context(), matchID)
 	if err != nil {
+		log.Printf("GetMatchCommentary: failed to fetch match %d: %v", matchID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch match"})
 		return
 	}
@@ -267,6 +274,7 @@ func (h *MatchHandler) GetMatchCommentary(c *gin.Context) {
 
 	commentary, err := h.repos.Commentary.GetByMatch(c.Request.Context(), matchID)
 	if err != nil {
+		log.Printf("GetMatchCommentary: failed to fetch commentary for match %d: %v", matchID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch commentary"})
 		return
 	}
@@ -293,6 +301,7 @@ func (h *MatchHandler) GetMatchPlayers(c *gin.Context) {
 	// Check match exists
 	match, err := h.repos.Matches.GetByID(ctx, matchID)
 	if err != nil {
+		log.Printf("GetMatchPlayers: failed to fetch match %d: %v", matchID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch match"})
 		return
 	}
@@ -303,6 +312,7 @@ func (h *MatchHandler) GetMatchPlayers(c *gin.Context) {
 
 	players, err := h.repos.Matches.GetPlayers(ctx, matchID)
 	if err != nil {
+		log.Printf("GetMatchPlayers: failed to fetch players for match %d: %v", matchID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch players"})
 		return
 	}
@@ -317,6 +327,7 @@ func (h *MatchHandler) GetCategories(c *gin.Context) {
 
 	categories, err := h.repos.Matches.GetCategories(ctx)
 	if err != nil {
+		log.Printf("GetCategories: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch categories"})
 		return
 	}
@@ -339,6 +350,7 @@ func (h *MatchHandler) GetMatchState(c *gin.Context) {
 	// Check if match is settled/cancelled — serve from DB
 	match, err := h.repos.Matches.GetByID(ctx, matchID)
 	if err != nil {
+		log.Printf("GetMatchState: failed to fetch match %d: %v", matchID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch match"})
 		return
 	}

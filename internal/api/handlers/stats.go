@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -28,6 +29,7 @@ func (h *StatsHandler) GetGlobalStats(c *gin.Context) {
 	// Get total matches
 	totalMatches, err := h.repos.Matches.CountTotal(ctx)
 	if err != nil {
+		log.Printf("GetGlobalStats: failed to count total matches: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch stats"})
 		return
 	}
@@ -89,6 +91,7 @@ func (h *StatsHandler) GetBurnHistory(c *gin.Context) {
 	}
 
 	if err != nil {
+		log.Printf("GetBurnHistory: failed to fetch burn timeline (granularity=%s, period=%d): %v", granularity, period, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch burn history"})
 		return
 	}

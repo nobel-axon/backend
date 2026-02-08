@@ -3,6 +3,7 @@ package handlers
 
 import (
 	"context"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -65,6 +66,7 @@ func (h *AgentHandler) GetAgentProfile(c *gin.Context) {
 	// Get agent stats
 	stats, err := h.repos.Agents.GetByAddress(ctx, address)
 	if err != nil {
+		log.Printf("GetAgentProfile: failed to fetch stats for %s: %v", address, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch agent stats"})
 		return
 	}
@@ -92,6 +94,7 @@ func (h *AgentHandler) GetAgentProfile(c *gin.Context) {
 	// Get recent matches
 	matches, err := h.repos.Matches.GetMatchesByAgent(ctx, address, 10)
 	if err != nil {
+		log.Printf("GetAgentProfile: failed to fetch recent matches for %s: %v", address, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch recent matches"})
 		return
 	}
@@ -134,6 +137,7 @@ func (h *AgentHandler) GetAgentHistory(c *gin.Context) {
 
 	matches, total, err := h.repos.Matches.GetMatchesByAgentPaginated(ctx, address, limit, offset)
 	if err != nil {
+		log.Printf("GetAgentHistory: failed to fetch history for %s: %v", address, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch match history"})
 		return
 	}

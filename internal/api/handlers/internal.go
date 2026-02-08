@@ -71,6 +71,7 @@ func (h *InternalHandler) UpdateMatch(c *gin.Context) {
 	// Get existing match or create new one
 	match, err := h.repos.Matches.GetByID(ctx, req.MatchID)
 	if err != nil {
+		log.Printf("UpdateMatch: failed to fetch match %d: %v", req.MatchID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch match"})
 		return
 	}

@@ -2,6 +2,7 @@
 package handlers
 
 import (
+	"log"
 	"net/http"
 	"strconv"
 
@@ -48,6 +49,7 @@ func (h *LeaderboardHandler) GetLeaderboard(c *gin.Context) {
 
 	entries, err := h.repos.Agents.GetLeaderboard(c.Request.Context(), params)
 	if err != nil {
+		log.Printf("GetLeaderboard: failed to fetch (sortBy=%s): %v", params.SortBy, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch leaderboard"})
 		return
 	}
