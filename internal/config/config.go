@@ -4,6 +4,7 @@ package config
 import (
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -231,6 +232,11 @@ func Load(path string) (*Config, error) {
 		if n, err := strconv.Atoi(v); err == nil {
 			cfg.Lobby.MaxPlayers = n
 		}
+	}
+
+	// CORS
+	if v := os.Getenv("CORS_ORIGINS"); v != "" {
+		cfg.CORS.AllowedOrigins = strings.Split(v, ",")
 	}
 
 	return cfg, nil
