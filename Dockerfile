@@ -26,7 +26,6 @@ RUN apk add --no-cache ca-certificates tzdata
 
 # Copy binary from builder
 COPY --from=builder /app/axon-server .
-COPY --from=builder /app/config/config.yaml ./config/
 
 # Create non-root user
 RUN adduser -D -g '' appuser
