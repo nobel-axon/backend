@@ -4,8 +4,33 @@ package models
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 )
+
+// NullJSON handles nullable JSONB columns from postgres.
+type NullJSON struct {
+	Data  json.RawMessage
+	Valid bool
+}
+
+func (n *NullJSON) Scan(value interface{}) error {
+	if value == nil {
+		n.Data, n.Valid = nil, false
+		return nil
+	}
+	n.Valid = true
+	switch v := value.(type) {
+	case []byte:
+		n.Data = make(json.RawMessage, len(v))
+		copy(n.Data, v)
+	case string:
+		n.Data = json.RawMessage(v)
+	default:
+		return fmt.Errorf("NullJSON.Scan: unsupported type %T", value)
+	}
+	return nil
+}
 
 // Answer represents an answer submission stored in the database.
 type Answer struct {
@@ -24,7 +49,7 @@ type Answer struct {
 	TotalScore    sql.NullInt32   `db:"total_score" json:"-"`
 	Agreement     sql.NullString  `db:"agreement" json:"-"`
 	Reasoning     sql.NullString  `db:"reasoning" json:"-"`
-	Evaluations   json.RawMessage `db:"evaluations" json:"-"`
+	Evaluations   NullJSON `db:"evaluations" json:"-"`
 	SubmittedAt   time.Time       `db:"submitted_at" json:"submittedAt"`
 	VerifiedAt    sql.NullTime    `db:"verified_at" json:"-"`
 }
@@ -93,8 +118,8 @@ func (a *Answer) ToResponse() AnswerResponse {
 		s := a.Reasoning.String
 		resp.Reasoning = &s
 	}
-	if len(a.Evaluations) > 0 {
-		resp.Evaluations = a.Evaluations
+	if a.Evaluations.Valid && len(a.Evaluations.Data) > 0 {
+		resp.Evaluations = a.Evaluations.Data
 	}
 	if a.VerifiedAt.Valid {
 		s := a.VerifiedAt.Time.Format(time.RFC3339)
