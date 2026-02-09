@@ -13,6 +13,7 @@ type GlobalStats struct {
 	TotalAgents     int    `json:"totalAgents"`
 	TotalBurned     string `json:"totalBurned"` // Total NEURON burned
 	TotalPoolVolume string `json:"totalPoolVolume"` // Total MON in pools
+	TotalEarnings   string `json:"totalEarnings"`   // Total MON actually earned by agents
 	Last24hMatches  int    `json:"last24hMatches"`
 	Last24hBurned   string `json:"last24hBurned"`
 }

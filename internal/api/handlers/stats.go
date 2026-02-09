@@ -51,6 +51,9 @@ func (h *StatsHandler) GetGlobalStats(c *gin.Context) {
 	// Get total pool volume
 	totalPoolVolume, _ := h.repos.Burns.GetTotalPoolVolume(ctx)
 
+	// Get total actual earnings (sum of what agents won)
+	totalEarnings, _ := h.repos.Agents.GetTotalEarnings(ctx)
+
 	// Get last 24h stats
 	last24hMatches, _ := h.repos.Matches.CountLast24h(ctx)
 	last24hBurned, _ := h.repos.Burns.GetTotalBurnedLast24h(ctx)
@@ -62,6 +65,7 @@ func (h *StatsHandler) GetGlobalStats(c *gin.Context) {
 		TotalAgents:     totalAgents,
 		TotalBurned:     totalBurned,
 		TotalPoolVolume: totalPoolVolume,
+		TotalEarnings:   totalEarnings,
 		Last24hMatches:  last24hMatches,
 		Last24hBurned:   last24hBurned,
 	})

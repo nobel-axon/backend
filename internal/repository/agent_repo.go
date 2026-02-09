@@ -114,6 +114,54 @@ func (r *AgentRepository) RecordAnswer(ctx context.Context, agentAddr string, is
 	return err
 }
 
+// RollbackWin reverses a match win for an agent (used when cancelling a previously-settled match).
+func (r *AgentRepository) RollbackWin(ctx context.Context, agentAddr string, earnedMON string, earnedNeuron string) error {
+	if earnedMON == "" {
+		earnedMON = "0"
+	}
+	if earnedNeuron == "" {
+		earnedNeuron = "0"
+	}
+
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE app_agent_stats SET
+			matches_won = GREATEST(matches_won - 1, 0),
+			total_earned_mon = GREATEST((COALESCE(total_earned_mon::numeric, 0) - $2::numeric), 0)::text,
+			total_earned_neuron = GREATEST((COALESCE(total_earned_neuron::numeric, 0) - $3::numeric), 0)::text,
+			last_active = NOW()
+		WHERE LOWER(agent_addr) = LOWER($1)`,
+		agentAddr, earnedMON, earnedNeuron,
+	)
+	return err
+}
+
+// DecrementMatchesPlayed decrements the matches played count.
+func (r *AgentRepository) DecrementMatchesPlayed(ctx context.Context, agentAddr string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE app_agent_stats SET
+			matches_played = GREATEST(matches_played - 1, 0),
+			last_active = NOW()
+		WHERE LOWER(agent_addr) = LOWER($1)`,
+		agentAddr,
+	)
+	return err
+}
+
+// GetTotalEarnings returns the sum of all agents' total_earned_mon.
+func (r *AgentRepository) GetTotalEarnings(ctx context.Context) (string, error) {
+	var total sql.NullString
+	err := r.db.GetContext(ctx, &total,
+		`SELECT COALESCE(SUM(total_earned_mon::numeric), 0)::text FROM app_agent_stats`,
+	)
+	if err != nil {
+		return "0", err
+	}
+	if !total.Valid {
+		return "0", nil
+	}
+	return total.String, nil
+}
+
 // GetLeaderboard retrieves the top agents.
 func (r *AgentRepository) GetLeaderboard(ctx context.Context, params models.LeaderboardParams) ([]models.LeaderboardEntry, error) {
 	orderBy := "matches_won DESC"

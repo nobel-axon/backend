@@ -395,8 +395,38 @@ func (h *InternalHandler) SettleMatch(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
+	// Idempotency guard: skip if match is already in a terminal phase
+	existing, err := h.repos.Matches.GetByID(ctx, req.MatchID)
+	if err != nil || existing == nil {
+		log.Printf("Internal: match %d not found", req.MatchID)
+		c.JSON(http.StatusNotFound, gin.H{"error": "Match not found"})
+		return
+	}
+	if !req.IsCancelled && (existing.Phase == "settled" || existing.Phase == "cancelled") {
+		log.Printf("Internal: match %d already %s, skipping settle", req.MatchID, existing.Phase)
+		c.JSON(http.StatusOK, gin.H{"status": "already_" + existing.Phase})
+		return
+	}
+
 	// Update match status
 	if req.IsCancelled {
+		// Rollback agent stats if match was previously settled with a winner
+		if existing.Phase == "settled" && existing.WinnerAddress.Valid {
+			log.Printf("Internal: rolling back stats for cancelled match %d (was settled, winner: %s)", req.MatchID, existing.WinnerAddress.String)
+			if err := h.repos.Agents.RollbackWin(ctx, existing.WinnerAddress.String, req.PrizeMON, req.PrizeNeuron); err != nil {
+				log.Printf("Failed to rollback winner stats for match %d: %v", req.MatchID, err)
+			}
+			// Rollback matches_played for all players
+			players, err := h.repos.Matches.GetPlayers(ctx, req.MatchID)
+			if err == nil {
+				for _, p := range players {
+					if err := h.repos.Agents.DecrementMatchesPlayed(ctx, p.AgentAddr); err != nil {
+						log.Printf("Failed to decrement matches_played for %s: %v", p.AgentAddr, err)
+					}
+				}
+			}
+		}
+
 		if err := h.repos.Matches.UpdatePhase(ctx, req.MatchID, "cancelled"); err != nil {
 			log.Printf("Failed to cancel match %d: %v", req.MatchID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to cancel match"})
