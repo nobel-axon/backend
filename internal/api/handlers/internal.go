@@ -188,6 +188,16 @@ func (h *InternalHandler) UpdateMatch(c *gin.Context) {
 				log.Printf("Forwarded agent_joined_queue for match %d to Chief (agent=%s)", matchID, agent)
 			}
 		}()
+
+		// Broadcast dedicated agent_registered event for live feed
+		h.hub.Broadcast(websocket.WSEvent{
+			Type: websocket.EventAgentRegistered,
+			Data: websocket.AgentRegisteredData{
+				MatchID:     req.MatchID,
+				AgentAddr:   *req.Agent,
+				PlayerCount: match.PlayerCount,
+			},
+		})
 	}
 
 	// Broadcast to WebSocket clients

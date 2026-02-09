@@ -4,9 +4,25 @@ package websocket
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"sync"
 	"time"
 )
+
+// WelcomeCooldown is the minimum interval between welcome messages.
+const WelcomeCooldown = 45 * time.Second
+
+// welcomeMessages are broadcast when a new viewer connects during idle periods.
+var welcomeMessages = []string{
+	"Another spectator enters the arena. The crowd grows...",
+	"A new pair of eyes watches from the stands. Welcome to the arena.",
+	"The arena stirs as a visitor arrives. Will they stay to witness greatness?",
+	"The torches flicker as someone new approaches the arena gates.",
+	"A curious mind joins the audience. The arena acknowledges your presence.",
+	"Fresh footsteps echo in the arena halls. The show will begin soon.",
+	"A challenger? A spectator? Either way, the arena welcomes you.",
+	"The stands fill slowly. Every great battle needs its witnesses.",
+}
 
 // Hub maintains the set of active clients and broadcasts messages to clients.
 type Hub struct {
@@ -29,6 +45,13 @@ type Hub struct {
 	// Ponder indexer and Chief reporter hitting the same internal endpoints.
 	recentEvents map[string]time.Time
 	recentMu     sync.Mutex
+
+	// OnConnect is called (in a goroutine) when a new client connects.
+	OnConnect func(clientCount int)
+
+	// Welcome commentary cooldown
+	lastWelcome time.Time
+	welcomeMu   sync.Mutex
 }
 
 // NewHub creates a new Hub.
@@ -65,8 +88,12 @@ func (h *Hub) Run() {
 		case client := <-h.register:
 			h.mu.Lock()
 			h.clients[client] = true
+			count := len(h.clients)
 			h.mu.Unlock()
-			log.Printf("WebSocket client connected (total: %d)", len(h.clients))
+			log.Printf("WebSocket client connected (total: %d)", count)
+			if h.OnConnect != nil {
+				go h.OnConnect(count)
+			}
 
 		case client := <-h.unregister:
 			h.mu.Lock()
@@ -179,4 +206,25 @@ func (h *Hub) ClientCount() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.clients)
+}
+
+// BroadcastWelcome sends a welcome commentary message if the cooldown has elapsed.
+func (h *Hub) BroadcastWelcome() {
+	h.welcomeMu.Lock()
+	if time.Since(h.lastWelcome) < WelcomeCooldown {
+		h.welcomeMu.Unlock()
+		return
+	}
+	h.lastWelcome = time.Now()
+	h.welcomeMu.Unlock()
+
+	msg := welcomeMessages[rand.Intn(len(welcomeMessages))]
+	h.Broadcast(WSEvent{
+		Type: EventCommentary,
+		Data: CommentaryData{
+			AgentID:   "system",
+			EventType: "welcome",
+			Text:      msg,
+		},
+	})
 }
