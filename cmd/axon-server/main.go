@@ -94,9 +94,6 @@ func main() {
 
 	// Create WebSocket hub
 	wsHub := websocket.NewHub()
-	wsHub.OnConnect = func(clientCount int) {
-		wsHub.BroadcastWelcome()
-	}
 	go wsHub.Run()
 
 	// Create Chief client

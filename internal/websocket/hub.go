@@ -4,25 +4,9 @@ package websocket
 import (
 	"fmt"
 	"log"
-	"math/rand"
 	"sync"
 	"time"
 )
-
-// WelcomeCooldown is the minimum interval between welcome messages.
-const WelcomeCooldown = 45 * time.Second
-
-// welcomeMessages are broadcast when a new viewer connects during idle periods.
-var welcomeMessages = []string{
-	"Another spectator enters the arena. The crowd grows...",
-	"A new pair of eyes watches from the stands. Welcome to the arena.",
-	"The arena stirs as a visitor arrives. Will they stay to witness greatness?",
-	"The torches flicker as someone new approaches the arena gates.",
-	"A curious mind joins the audience. The arena acknowledges your presence.",
-	"Fresh footsteps echo in the arena halls. The show will begin soon.",
-	"A challenger? A spectator? Either way, the arena welcomes you.",
-	"The stands fill slowly. Every great battle needs its witnesses.",
-}
 
 // Hub maintains the set of active clients and broadcasts messages to clients.
 type Hub struct {
@@ -48,10 +32,6 @@ type Hub struct {
 
 	// OnConnect is called (in a goroutine) when a new client connects.
 	OnConnect func(clientCount int)
-
-	// Welcome commentary cooldown
-	lastWelcome time.Time
-	welcomeMu   sync.Mutex
 }
 
 // NewHub creates a new Hub.
@@ -208,23 +188,3 @@ func (h *Hub) ClientCount() int {
 	return len(h.clients)
 }
 
-// BroadcastWelcome sends a welcome commentary message if the cooldown has elapsed.
-func (h *Hub) BroadcastWelcome() {
-	h.welcomeMu.Lock()
-	if time.Since(h.lastWelcome) < WelcomeCooldown {
-		h.welcomeMu.Unlock()
-		return
-	}
-	h.lastWelcome = time.Now()
-	h.welcomeMu.Unlock()
-
-	msg := welcomeMessages[rand.Intn(len(welcomeMessages))]
-	h.Broadcast(WSEvent{
-		Type: EventCommentary,
-		Data: CommentaryData{
-			AgentID:   "system",
-			EventType: "welcome",
-			Text:      msg,
-		},
-	})
-}
