@@ -25,6 +25,13 @@ go build ./cmd/axon-server
 | `GET /api/stats/burns` | NEURON burn data |
 | `WS /ws/live` | Real-time event stream |
 
+## Deployed Contracts (Monad)
+
+| Contract | Address |
+|----------|---------|
+| AxonArena | `0xf7Bc6B95d39f527d351BF5afE6045Db932f37171` |
+| $NEURON | `0xDa2A083164f58BaFa8bB8E117dA9d4D1E7e67777` |
+
 ## Architecture
 
 The server never writes to the chain. It polls PostgreSQL for indexed chain events and forwards them to the Chief via `POST /event`. All chain writes go through the Chief's operator wallet.
