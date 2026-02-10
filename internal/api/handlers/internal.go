@@ -374,6 +374,7 @@ type SettleMatchRequest struct {
 	WinnerAddr   string `json:"winnerAddr"`
 	PrizeMON     string `json:"prizeMon"`
 	PrizeNeuron  string `json:"prizeNeuron"`
+	SettleTxHash string `json:"settleTxHash,omitempty"`
 	Reason       string `json:"reason,omitempty"` // For cancellations
 	IsCancelled  bool   `json:"isCancelled"`
 }
@@ -447,7 +448,7 @@ func (h *InternalHandler) SettleMatch(c *gin.Context) {
 	}
 
 	// Set winner
-	if err := h.repos.Matches.SetWinner(ctx, req.MatchID, req.WinnerAddr); err != nil {
+	if err := h.repos.Matches.SetWinner(ctx, req.MatchID, req.WinnerAddr, req.SettleTxHash); err != nil {
 		log.Printf("Failed to settle match %d: %v", req.MatchID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to settle match"})
 		return
@@ -471,14 +472,18 @@ func (h *InternalHandler) SettleMatch(c *gin.Context) {
 	}
 
 	// Broadcast settlement
+	settleData := map[string]interface{}{
+		"matchId":     req.MatchID,
+		"winnerAddr":  req.WinnerAddr,
+		"prizeMon":    req.PrizeMON,
+		"prizeNeuron": req.PrizeNeuron,
+	}
+	if req.SettleTxHash != "" {
+		settleData["settleTxHash"] = req.SettleTxHash
+	}
 	h.hub.Broadcast(websocket.WSEvent{
 		Type: "match_settled",
-		Data: map[string]interface{}{
-			"matchId":     req.MatchID,
-			"winnerAddr":  req.WinnerAddr,
-			"prizeMon":    req.PrizeMON,
-			"prizeNeuron": req.PrizeNeuron,
-		},
+		Data: settleData,
 	})
 
 	c.JSON(http.StatusOK, gin.H{"status": "settled"})

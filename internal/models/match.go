@@ -42,6 +42,7 @@ type Match struct {
 	UpdatedAt              time.Time      `db:"updated_at" json:"updatedAt"`
 	RegistrationReportedAt sql.NullTime   `db:"registration_reported_at" json:"-"`
 	TimeoutReportedAt      sql.NullTime   `db:"timeout_reported_at" json:"-"`
+	SettleTxHash           sql.NullString `db:"settle_tx_hash" json:"-"`
 }
 
 // MatchResponse is the JSON response for a match.
@@ -65,6 +66,7 @@ type MatchResponse struct {
 	RevealedSalt     *string `json:"revealedSalt,omitempty"`
 	CreatedAt        string  `json:"createdAt"`
 	SettledAt        *string `json:"settledAt,omitempty"`
+	SettleTxHash     *string `json:"settleTxHash,omitempty"`
 	AnswerCount      int     `json:"answerCount"`
 	CommentaryCount  int     `json:"commentaryCount"`
 }
@@ -128,6 +130,10 @@ func (m *Match) ToResponse() MatchResponse {
 	if m.SettledAt.Valid {
 		s := m.SettledAt.Time.Format(time.RFC3339)
 		resp.SettledAt = &s
+	}
+	if m.SettleTxHash.Valid {
+		s := m.SettleTxHash.String
+		resp.SettleTxHash = &s
 	}
 
 	return resp
