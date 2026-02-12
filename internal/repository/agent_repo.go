@@ -172,6 +172,8 @@ func (r *AgentRepository) GetLeaderboard(ctx context.Context, params models.Lead
 		orderBy = "CASE WHEN correct_answers + wrong_answers > 0 THEN correct_answers::float / (correct_answers + wrong_answers) ELSE 0 END DESC"
 	case "burned":
 		orderBy = "total_burned_neuron::numeric DESC"
+	case "reputation":
+		orderBy = "reputation_score DESC"
 	}
 
 	limit := params.Limit
@@ -220,6 +222,49 @@ func (r *AgentRepository) UpdateLastActive(ctx context.Context, agentAddr string
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE app_agent_stats SET last_active = $2 WHERE agent_addr = $1`,
 		agentAddr, time.Now(),
+	)
+	return err
+}
+
+// UpdateReputation updates the reputation score and feedback count for an agent.
+func (r *AgentRepository) UpdateReputation(ctx context.Context, agentAddr string, score int) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO app_agent_stats (agent_addr, reputation_score, reputation_feedback_count, erc8004_registered, last_active)
+		VALUES (LOWER($1), $2, 1, TRUE, NOW())
+		ON CONFLICT (agent_addr) DO UPDATE SET
+			reputation_score = app_agent_stats.reputation_score + $2,
+			reputation_feedback_count = app_agent_stats.reputation_feedback_count + 1,
+			erc8004_registered = TRUE,
+			last_active = NOW()`,
+		agentAddr, score,
+	)
+	return err
+}
+
+// GetReputation returns the reputation data for an agent.
+func (r *AgentRepository) GetReputation(ctx context.Context, agentAddr string) (int, int, bool, error) {
+	var score, feedbackCount int
+	var registered bool
+	err := r.db.QueryRowContext(ctx,
+		`SELECT COALESCE(reputation_score, 0), COALESCE(reputation_feedback_count, 0), COALESCE(erc8004_registered, FALSE)
+		FROM app_agent_stats WHERE LOWER(agent_addr) = LOWER($1)`,
+		agentAddr,
+	).Scan(&score, &feedbackCount, &registered)
+	if err != nil {
+		return 0, 0, false, err
+	}
+	return score, feedbackCount, registered, nil
+}
+
+// SetERC8004Registered marks an agent as registered in the ERC-8004 registry.
+func (r *AgentRepository) SetERC8004Registered(ctx context.Context, agentAddr string) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO app_agent_stats (agent_addr, erc8004_registered, last_active)
+		VALUES (LOWER($1), TRUE, NOW())
+		ON CONFLICT (agent_addr) DO UPDATE SET
+			erc8004_registered = TRUE,
+			last_active = NOW()`,
+		agentAddr,
 	)
 	return err
 }

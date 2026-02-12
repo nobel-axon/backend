@@ -76,6 +76,7 @@ func (s *Server) SetupRoutes(r *gin.Engine, hub *websocket.Hub) {
 	agentHandler := handlers.NewAgentHandler(s.repos)
 	statsHandler := handlers.NewStatsHandler(s.repos)
 	internalHandler := handlers.NewInternalHandler(s.repos, hub, s.chiefClient)
+	bountyHandler := handlers.NewBountyHandler(s.repos, hub)
 
 	// Health check
 	r.GET("/health", handlers.Health(s.db))
@@ -114,6 +115,15 @@ func (s *Server) SetupRoutes(r *gin.Engine, hub *websocket.Hub) {
 		// Stats
 		api.GET("/stats", statsHandler.GetGlobalStats)
 		api.GET("/stats/burns", statsHandler.GetBurnHistory)
+
+		// Bounties (V2)
+		api.GET("/bounties", bountyHandler.ListBounties)
+		api.GET("/bounties/stats", bountyHandler.GetBountyStats)
+		api.GET("/bounties/:id", bountyHandler.GetBounty)
+		api.POST("/bounties", bountyHandler.CreateBounty)
+
+		// Agent reputation (V2)
+		api.GET("/agent/:address/reputation", bountyHandler.GetAgentReputation)
 	}
 
 	// Internal API routes (called by Chief or Ponder)
@@ -127,6 +137,15 @@ func (s *Server) SetupRoutes(r *gin.Engine, hub *websocket.Hub) {
 		internal.POST("/answer-submitted", internalHandler.RecordAnswerSubmitted)
 		internal.POST("/answer-revealed", internalHandler.RecordAnswerRevealed)
 		internal.POST("/match-personalities", internalHandler.StorePersonalities)
+
+		// Bounty internal endpoints (V2)
+		internal.POST("/bounty-created", bountyHandler.RecordBountyCreated)
+		internal.POST("/bounty-settled", bountyHandler.RecordBountySettled)
+		internal.POST("/bounty-answer-submitted", bountyHandler.RecordBountyAnswerSubmitted)
+		internal.POST("/reputation-updated", bountyHandler.RecordReputationUpdated)
+		internal.POST("/bounty-update", bountyHandler.RecordBountyUpdate)
+		internal.POST("/agent-registered", bountyHandler.RecordAgentRegistered)
+		internal.POST("/feedback-submitted", bountyHandler.RecordFeedbackSubmitted)
 	}
 
 	// Lobby routes (if enabled)

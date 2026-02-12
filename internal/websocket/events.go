@@ -35,6 +35,13 @@ const (
 	EventLobbyJoin      = "lobby_join"
 	EventLobbyLeave     = "lobby_leave"
 	EventLobbyHeartbeat = "lobby_heartbeat"
+
+	// Bounty events (V2)
+	EventBountyCreated         = "bounty_created"
+	EventBountySettled         = "bounty_settled"
+	EventBountyAnswerSubmitted = "bounty_answer_submitted"
+	EventAgentJoinedBounty     = "bounty_agent_joined"
+	EventReputationUpdated     = "reputation_updated"
 )
 
 // MatchCreatedData is the data for match_created events.
@@ -127,4 +134,38 @@ type LobbyReadyData struct {
 // LobbyGroupExpiredData is the data for lobby_group_expired events.
 type LobbyGroupExpiredData struct {
 	GroupID string `json:"groupId"`
+}
+
+// BountyCreatedData is the data for bounty_created events.
+type BountyCreatedData struct {
+	BountyID        int64  `json:"bountyId"`
+	CreatorAddress  string `json:"creatorAddress"`
+	QuestionText    string `json:"questionText"`
+	Category        string `json:"category"`
+	EntryFee        string `json:"entryFee"`
+	MaxParticipants int    `json:"maxParticipants"`
+}
+
+// BountySettledData is the data for bounty_settled events.
+type BountySettledData struct {
+	BountyID   int64  `json:"bountyId"`
+	WinnerAddr string `json:"winnerAddr"`
+}
+
+// BountyAnswerSubmittedData is the data for bounty_answer_submitted events.
+type BountyAnswerSubmittedData struct {
+	BountyID  int64  `json:"bountyId"`
+	AgentAddr string `json:"agentAddr"`
+}
+
+// AgentJoinedBountyData is the data for agent_joined_bounty events.
+type AgentJoinedBountyData struct {
+	BountyID  int64  `json:"bountyId"`
+	AgentAddr string `json:"agentAddr"`
+}
+
+// ReputationUpdatedData is the data for reputation_updated events.
+type ReputationUpdatedData struct {
+	AgentAddr string `json:"agentAddr"`
+	Score     int    `json:"score"`
 }

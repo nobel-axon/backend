@@ -31,7 +31,7 @@ func (h *LeaderboardHandler) GetLeaderboard(c *gin.Context) {
 	}
 
 	// Validate sortBy
-	validSortBy := map[string]bool{"wins": true, "earnings": true, "accuracy": true, "burned": true}
+	validSortBy := map[string]bool{"wins": true, "earnings": true, "accuracy": true, "burned": true, "reputation": true}
 	if !validSortBy[params.SortBy] {
 		params.SortBy = "earnings"
 	}

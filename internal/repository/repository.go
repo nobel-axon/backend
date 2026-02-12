@@ -15,6 +15,8 @@ type Repositories struct {
 	Poller        *PollerRepository
 	Personalities *PersonalityRepository
 	ChainEvents   *ChainEventRepository
+	Bounties      *BountyRepository
+	BountyAnswers *BountyAnswerRepository
 }
 
 // NewRepositories creates all repository instances.
@@ -28,5 +30,7 @@ func NewRepositories(database *db.DB) *Repositories {
 		Poller:        NewPollerRepository(database),
 		Personalities: NewPersonalityRepository(database),
 		ChainEvents:   NewChainEventRepository(database),
+		Bounties:      NewBountyRepository(database),
+		BountyAnswers: NewBountyAnswerRepository(database),
 	}
 }
