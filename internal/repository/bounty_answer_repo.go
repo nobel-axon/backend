@@ -23,12 +23,13 @@ func NewBountyAnswerRepository(database *db.DB) *BountyAnswerRepository {
 func (r *BountyAnswerRepository) Create(ctx context.Context, answer *models.BountyAnswer) (int64, error) {
 	var id int64
 	err := r.db.GetContext(ctx, &id,
-		`INSERT INTO app_bounty_answers (bounty_id, agent_addr, answer_text, reasoning, tx_hash)
-		VALUES ($1, $2, $3, $4, $5)
+		`INSERT INTO app_bounty_answers (bounty_id, agent_addr, answer_text, reasoning, tx_hash, attempt_number, neuron_burned)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
 		ON CONFLICT (bounty_id, agent_addr) DO UPDATE SET
-			answer_text = $3, reasoning = $4, tx_hash = $5
+			answer_text = $3, reasoning = $4, tx_hash = $5, attempt_number = $6, neuron_burned = $7
 		RETURNING id`,
 		answer.BountyID, answer.AgentAddr, answer.AnswerText, answer.Reasoning, answer.TxHash,
+		answer.AttemptNumber, answer.NeuronBurned,
 	)
 	return id, err
 }

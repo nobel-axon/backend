@@ -4,6 +4,7 @@ package handlers
 import (
 	"context"
 	"log"
+	"math/big"
 	"net/http"
 	"strconv"
 	"strings"
@@ -152,5 +153,72 @@ func (h *AgentHandler) GetAgentHistory(c *gin.Context) {
 		"total":   total,
 		"limit":   limit,
 		"offset":  offset,
+	})
+}
+
+// GetAgentEconomics handles GET /api/agent/:address/economics
+func (h *AgentHandler) GetAgentEconomics(c *gin.Context) {
+	address, valid := normalizeAddress(c.Param("address"))
+	if !valid {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid address format"})
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 10*time.Second)
+	defer cancel()
+
+	stats, err := h.repos.Agents.GetByAddress(ctx, address)
+	if err != nil {
+		log.Printf("GetAgentEconomics: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch agent stats"})
+		return
+	}
+
+	// Defaults for agents with no stats
+	totalSpent := "0"
+	totalEarned := "0"
+	netPnl := "0"
+	var matchRoi float64
+
+	if stats != nil {
+		totalSpent = stats.TotalBurnedNeuron
+		totalEarned = stats.TotalEarnedMON
+
+		earned, _ := new(big.Int).SetString(totalEarned, 10)
+		spent, _ := new(big.Int).SetString(totalSpent, 10)
+		if earned == nil {
+			earned = big.NewInt(0)
+		}
+		if spent == nil {
+			spent = big.NewInt(0)
+		}
+		pnl := new(big.Int).Sub(earned, spent)
+		netPnl = pnl.String()
+
+		if spent.Sign() > 0 {
+			earnedF, _ := new(big.Float).SetInt(earned).Float64()
+			spentF, _ := new(big.Float).SetInt(spent).Float64()
+			if spentF > 0 {
+				matchRoi = earnedF / spentF
+			}
+		}
+	}
+
+	bountiesPlayed, bountiesWon, err := h.repos.Bounties.CountPlayerBounties(ctx, address)
+	if err != nil {
+		log.Printf("GetAgentEconomics: CountPlayerBounties: %v", err)
+		// Non-fatal — continue with zeros
+	}
+
+	c.JSON(http.StatusOK, models.AgentEconomics{
+		AgentAddr:            address,
+		NeuronBalance:        "0", // On-chain query not available server-side
+		TotalSpent:           totalSpent,
+		TotalEarned:          totalEarned,
+		NetPnl:               netPnl,
+		MatchRoi:             matchRoi,
+		BountyRoi:            0,
+		BountiesParticipated: bountiesPlayed,
+		BountiesWon:          bountiesWon,
 	})
 }

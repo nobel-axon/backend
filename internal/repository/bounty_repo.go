@@ -4,6 +4,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"strconv"
 
 	"github.com/axon-arena/axon-server/internal/db"
 	"github.com/axon-arena/axon-server/internal/models"
@@ -23,11 +24,11 @@ func NewBountyRepository(database *db.DB) *BountyRepository {
 func (r *BountyRepository) Create(ctx context.Context, bounty *models.Bounty) error {
 	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO app_bounties (bounty_id, creator_address, question_text, category, difficulty,
-			entry_fee, pool_total, min_rating, max_participants, player_count, phase, deadline)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			entry_fee, base_answer_fee, pool_total, min_rating, max_participants, player_count, phase, deadline)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		ON CONFLICT (bounty_id) DO NOTHING`,
 		bounty.BountyID, bounty.CreatorAddress, bounty.QuestionText, bounty.Category,
-		bounty.Difficulty, bounty.EntryFee, bounty.PoolTotal, bounty.MinRating,
+		bounty.Difficulty, bounty.EntryFee, bounty.BaseAnswerFee, bounty.PoolTotal, bounty.MinRating,
 		bounty.MaxParticipants, bounty.PlayerCount, bounty.Phase, bounty.Deadline,
 	)
 	return err
@@ -48,20 +49,29 @@ func (r *BountyRepository) GetByID(ctx context.Context, bountyID int64) (*models
 	return &bounty, nil
 }
 
-// List retrieves bounties with optional phase filter and pagination.
-func (r *BountyRepository) List(ctx context.Context, phase string, limit, offset int) ([]models.Bounty, error) {
+// List retrieves bounties with optional phase and category filters and pagination.
+func (r *BountyRepository) List(ctx context.Context, phase, category string, limit, offset int) ([]models.Bounty, error) {
 	var bounties []models.Bounty
+
+	query := `SELECT * FROM app_bounties WHERE 1=1`
+	args := []interface{}{}
+	argIdx := 1
+
 	if phase != "" {
-		err := r.db.SelectContext(ctx, &bounties,
-			`SELECT * FROM app_bounties WHERE phase = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
-			phase, limit, offset,
-		)
-		return bounties, err
+		query += ` AND phase = $` + strconv.Itoa(argIdx)
+		args = append(args, phase)
+		argIdx++
 	}
-	err := r.db.SelectContext(ctx, &bounties,
-		`SELECT * FROM app_bounties ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
-		limit, offset,
-	)
+	if category != "" {
+		query += ` AND category = $` + strconv.Itoa(argIdx)
+		args = append(args, category)
+		argIdx++
+	}
+
+	query += ` ORDER BY created_at DESC LIMIT $` + strconv.Itoa(argIdx) + ` OFFSET $` + strconv.Itoa(argIdx+1)
+	args = append(args, limit, offset)
+
+	err := r.db.SelectContext(ctx, &bounties, query, args...)
 	return bounties, err
 }
 
@@ -85,10 +95,11 @@ func (r *BountyRepository) SetWinner(ctx context.Context, bountyID int64, winner
 }
 
 // AddPlayer records a player joining a bounty.
-func (r *BountyRepository) AddPlayer(ctx context.Context, bountyID int64, agentAddr string) error {
+func (r *BountyRepository) AddPlayer(ctx context.Context, bountyID int64, agentAddr string, agentID int64, snapshotReputation string) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO app_bounty_players (bounty_id, agent_addr) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-		bountyID, agentAddr,
+		`INSERT INTO app_bounty_players (bounty_id, agent_addr, agent_id, snapshot_reputation)
+		VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+		bountyID, agentAddr, agentID, snapshotReputation,
 	)
 	if err != nil {
 		return err
@@ -113,24 +124,34 @@ func (r *BountyRepository) UpdatePoolTotal(ctx context.Context, bountyID int64, 
 func (r *BountyRepository) Upsert(ctx context.Context, bounty *models.Bounty) error {
 	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO app_bounties (bounty_id, creator_address, question_text, category, difficulty,
-			entry_fee, pool_total, min_rating, max_participants, player_count, phase, deadline)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			entry_fee, base_answer_fee, pool_total, min_rating, max_participants, player_count, phase, deadline)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		ON CONFLICT (bounty_id) DO UPDATE SET
 			creator_address = COALESCE(NULLIF($2, ''), app_bounties.creator_address),
 			question_text = COALESCE(NULLIF($3, ''), app_bounties.question_text),
 			category = COALESCE($4, app_bounties.category),
 			difficulty = CASE WHEN $5 > 0 THEN $5 ELSE app_bounties.difficulty END,
 			entry_fee = COALESCE(NULLIF($6, ''), app_bounties.entry_fee),
-			pool_total = COALESCE(NULLIF($7, ''), app_bounties.pool_total),
-			min_rating = COALESCE(NULLIF($8, ''), app_bounties.min_rating),
-			max_participants = CASE WHEN $9 > 0 THEN $9 ELSE app_bounties.max_participants END,
-			player_count = CASE WHEN $10 > 0 THEN $10 ELSE app_bounties.player_count END,
-			phase = COALESCE(NULLIF($11, ''), app_bounties.phase),
-			deadline = COALESCE($12, app_bounties.deadline),
+			base_answer_fee = COALESCE(NULLIF($7, ''), app_bounties.base_answer_fee),
+			pool_total = COALESCE(NULLIF($8, ''), app_bounties.pool_total),
+			min_rating = COALESCE(NULLIF($9, ''), app_bounties.min_rating),
+			max_participants = CASE WHEN $10 > 0 THEN $10 ELSE app_bounties.max_participants END,
+			player_count = CASE WHEN $11 > 0 THEN $11 ELSE app_bounties.player_count END,
+			phase = COALESCE(NULLIF($12, ''), app_bounties.phase),
+			deadline = COALESCE($13, app_bounties.deadline),
 			updated_at = NOW()`,
 		bounty.BountyID, bounty.CreatorAddress, bounty.QuestionText, bounty.Category,
-		bounty.Difficulty, bounty.EntryFee, bounty.PoolTotal, bounty.MinRating,
+		bounty.Difficulty, bounty.EntryFee, bounty.BaseAnswerFee, bounty.PoolTotal, bounty.MinRating,
 		bounty.MaxParticipants, bounty.PlayerCount, bounty.Phase, bounty.Deadline,
+	)
+	return err
+}
+
+// IncrementAnswerCount increments the answer count for a bounty.
+func (r *BountyRepository) IncrementAnswerCount(ctx context.Context, bountyID int64) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE app_bounties SET answer_count = answer_count + 1 WHERE bounty_id = $1`,
+		bountyID,
 	)
 	return err
 }
@@ -159,6 +180,23 @@ func (r *BountyRepository) GetTotalRewardPool(ctx context.Context) (string, erro
 		return "0", err
 	}
 	return total.String, nil
+}
+
+// CountPlayerBounties returns the number of bounties played and won by an agent.
+func (r *BountyRepository) CountPlayerBounties(ctx context.Context, addr string) (played int, won int, err error) {
+	err = r.db.QueryRowContext(ctx,
+		`SELECT
+			COUNT(*) as played,
+			COUNT(CASE WHEN b.winner_address = LOWER($1) THEN 1 END) as won
+		FROM app_bounty_players bp
+		JOIN app_bounties b ON b.bounty_id = bp.bounty_id
+		WHERE LOWER(bp.agent_addr) = LOWER($1)`,
+		addr,
+	).Scan(&played, &won)
+	if err != nil {
+		return 0, 0, err
+	}
+	return played, won, nil
 }
 
 // GetAvgReward returns the average reward pool for settled bounties.

@@ -2,7 +2,9 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
+	"encoding/json"
 	"log"
 	"net/http"
 	"strconv"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/axon-arena/axon-server/internal/chief"
 	"github.com/axon-arena/axon-server/internal/models"
 	"github.com/axon-arena/axon-server/internal/repository"
 	"github.com/axon-arena/axon-server/internal/websocket"
@@ -17,18 +20,20 @@ import (
 
 // BountyHandler handles bounty API requests.
 type BountyHandler struct {
-	repos *repository.Repositories
-	hub   *websocket.Hub
+	repos       *repository.Repositories
+	hub         *websocket.Hub
+	chiefClient *chief.Client
 }
 
 // NewBountyHandler creates a new bounty handler.
-func NewBountyHandler(repos *repository.Repositories, hub *websocket.Hub) *BountyHandler {
-	return &BountyHandler{repos: repos, hub: hub}
+func NewBountyHandler(repos *repository.Repositories, hub *websocket.Hub, chiefClient *chief.Client) *BountyHandler {
+	return &BountyHandler{repos: repos, hub: hub, chiefClient: chiefClient}
 }
 
 // ListBounties handles GET /api/bounties
 func (h *BountyHandler) ListBounties(c *gin.Context) {
 	phase := c.Query("phase")
+	category := c.Query("category")
 	limit := 50
 	offset := 0
 
@@ -43,11 +48,20 @@ func (h *BountyHandler) ListBounties(c *gin.Context) {
 		}
 	}
 
-	bounties, err := h.repos.Bounties.List(c.Request.Context(), phase, limit, offset)
+	ctx := c.Request.Context()
+	bounties, err := h.repos.Bounties.List(ctx, phase, category, limit, offset)
 	if err != nil {
 		log.Printf("ListBounties: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch bounties"})
 		return
+	}
+
+	// Get total count for pagination
+	var total int
+	if phase != "" {
+		total, _ = h.repos.Bounties.CountByPhase(ctx, phase)
+	} else {
+		total, _ = h.repos.Bounties.CountTotal(ctx)
 	}
 
 	responses := make([]models.BountyResponse, len(bounties))
@@ -57,6 +71,7 @@ func (h *BountyHandler) ListBounties(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"bounties": responses,
+		"total":    total,
 		"limit":    limit,
 		"offset":   offset,
 	})
@@ -93,8 +108,32 @@ func (h *BountyHandler) GetBounty(c *gin.Context) {
 		answerResponses[i] = a.ToResponse()
 	}
 
+	resp := bounty.ToResponse()
+
+	// Populate winnerAnswer if bounty has a winner
+	if bounty.WinnerAddress.Valid && len(answers) > 0 {
+		winnerAddr := bounty.WinnerAddress.String
+		var bestScore int32
+		var bestAnswer string
+		found := false
+		for _, a := range answers {
+			if a.AgentAddr == winnerAddr {
+				if !found || (a.TotalScore.Valid && a.TotalScore.Int32 > bestScore) {
+					bestAnswer = a.AnswerText
+					if a.TotalScore.Valid {
+						bestScore = a.TotalScore.Int32
+					}
+					found = true
+				}
+			}
+		}
+		if found {
+			resp.WinnerAnswer = &bestAnswer
+		}
+	}
+
 	c.JSON(http.StatusOK, gin.H{
-		"bounty":  bounty.ToResponse(),
+		"bounty":  resp,
 		"answers": answerResponses,
 	})
 }
@@ -143,7 +182,7 @@ func (h *BountyHandler) CreateBounty(c *gin.Context) {
 		PoolTotal:       "0",
 		MinRating:       minRating,
 		MaxParticipants: maxPart,
-		Phase:           "open",
+		Phase:           "active",
 		Deadline:        sql.NullTime{Time: deadline, Valid: true},
 	}
 
@@ -194,10 +233,7 @@ func (h *BountyHandler) GetBountyStats(c *gin.Context) {
 		return
 	}
 
-	activeOpen, _ := h.repos.Bounties.CountByPhase(ctx, "open")
-	activeAnswer, _ := h.repos.Bounties.CountByPhase(ctx, "answer_period")
-	activeBounties := activeOpen + activeAnswer
-
+	activeBounties, _ := h.repos.Bounties.CountByPhase(ctx, "active")
 	settledBounties, _ := h.repos.Bounties.CountByPhase(ctx, "settled")
 	totalRewardPool, _ := h.repos.Bounties.GetTotalRewardPool(ctx)
 	avgReward, _ := h.repos.Bounties.GetAvgReward(ctx)
@@ -212,61 +248,6 @@ func (h *BountyHandler) GetBountyStats(c *gin.Context) {
 }
 
 // --- Internal bounty handlers (called by Chief or Indexer) ---
-
-// InternalBountyCreatedRequest is the request for recording a bounty creation.
-type InternalBountyCreatedRequest struct {
-	BountyID        int64  `json:"bountyId" binding:"required"`
-	CreatorAddress  string `json:"creatorAddress" binding:"required"`
-	QuestionText    string `json:"questionText"`
-	Category        string `json:"category"`
-	Difficulty      int    `json:"difficulty"`
-	EntryFee        string `json:"entryFee"`
-	Deadline        string `json:"deadline"`
-	MaxParticipants int    `json:"maxParticipants"`
-	MinRating       string `json:"minRating"`
-}
-
-// RecordBountyCreated handles POST /internal/bounty-created
-func (h *BountyHandler) RecordBountyCreated(c *gin.Context) {
-	var req InternalBountyCreatedRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	var deadline sql.NullTime
-	if req.Deadline != "" {
-		if t, err := time.Parse(time.RFC3339, req.Deadline); err == nil {
-			deadline = sql.NullTime{Time: t, Valid: true}
-		}
-	}
-
-	bounty := &models.Bounty{
-		BountyID:        req.BountyID,
-		CreatorAddress:  req.CreatorAddress,
-		QuestionText:    req.QuestionText,
-		Category:        sql.NullString{String: req.Category, Valid: req.Category != ""},
-		Difficulty:      req.Difficulty,
-		EntryFee:        req.EntryFee,
-		MinRating:       req.MinRating,
-		MaxParticipants: req.MaxParticipants,
-		Phase:           "open",
-		Deadline:        deadline,
-	}
-
-	if err := h.repos.Bounties.Create(c.Request.Context(), bounty); err != nil {
-		log.Printf("Internal: bounty-created failed: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record bounty"})
-		return
-	}
-
-	h.hub.Broadcast(websocket.WSEvent{
-		Type: "bounty_created",
-		Data: bounty.ToResponse(),
-	})
-
-	c.JSON(http.StatusOK, gin.H{"status": "created", "bountyId": req.BountyID})
-}
 
 // InternalBountySettledRequest is the request for recording a bounty settlement.
 type InternalBountySettledRequest struct {
@@ -283,30 +264,49 @@ func (h *BountyHandler) RecordBountySettled(c *gin.Context) {
 		return
 	}
 
-	if err := h.repos.Bounties.SetWinner(c.Request.Context(), req.BountyID, req.WinnerAddr, req.SettleTxHash); err != nil {
+	ctx := c.Request.Context()
+
+	if err := h.repos.Bounties.SetWinner(ctx, req.BountyID, req.WinnerAddr, req.SettleTxHash); err != nil {
 		log.Printf("Internal: bounty-settled failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to settle bounty"})
 		return
 	}
 
+	// Fetch pool_total for the WS broadcast
+	var rewardAmount string
+	if bounty, err := h.repos.Bounties.GetByID(ctx, req.BountyID); err == nil && bounty != nil {
+		rewardAmount = bounty.PoolTotal
+	}
+
 	h.hub.Broadcast(websocket.WSEvent{
-		Type: "bounty_settled",
-		Data: map[string]interface{}{
-			"bountyId":   req.BountyID,
-			"winnerAddr": req.WinnerAddr,
+		Type: websocket.EventBountySettled,
+		Data: websocket.BountySettledData{
+			BountyID:     req.BountyID,
+			WinnerAddr:   req.WinnerAddr,
+			RewardAmount: rewardAmount,
 		},
 	})
+
+	// Forward to Chief
+	if h.chiefClient != nil {
+		go h.chiefClient.ReportEvent(context.Background(), chief.EventTypeBountySettled, req.BountyID, map[string]interface{}{
+			"winnerAddr":   req.WinnerAddr,
+			"settleTxHash": req.SettleTxHash,
+		})
+	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "settled", "bountyId": req.BountyID})
 }
 
 // InternalBountyAnswerRequest is the request for recording a bounty answer.
 type InternalBountyAnswerRequest struct {
-	BountyID   int64  `json:"bountyId" binding:"required"`
-	AgentAddr  string `json:"agentAddr" binding:"required"`
-	AnswerText string `json:"answerText"`
-	Reasoning  string `json:"reasoning"`
-	TxHash     string `json:"txHash"`
+	BountyID      int64  `json:"bountyId" binding:"required"`
+	AgentAddr     string `json:"agent" binding:"required"`
+	AnswerText    string `json:"answer"`
+	AttemptNumber int    `json:"attemptNumber"`
+	NeuronBurned  string `json:"neuronBurned"`
+	Reasoning     string `json:"reasoning"`
+	TxHash        string `json:"txHash"`
 }
 
 // RecordBountyAnswerSubmitted handles POST /internal/bounty-answer-submitted
@@ -317,27 +317,57 @@ func (h *BountyHandler) RecordBountyAnswerSubmitted(c *gin.Context) {
 		return
 	}
 
-	answer := &models.BountyAnswer{
-		BountyID:   req.BountyID,
-		AgentAddr:  req.AgentAddr,
-		AnswerText: req.AnswerText,
-		Reasoning:  sql.NullString{String: req.Reasoning, Valid: req.Reasoning != ""},
-		TxHash:     sql.NullString{String: req.TxHash, Valid: req.TxHash != ""},
+	attemptNum := req.AttemptNumber
+	if attemptNum <= 0 {
+		attemptNum = 1
+	}
+	neuronBurned := req.NeuronBurned
+	if neuronBurned == "" {
+		neuronBurned = "0"
 	}
 
-	if _, err := h.repos.BountyAnswers.Create(c.Request.Context(), answer); err != nil {
+	answer := &models.BountyAnswer{
+		BountyID:      req.BountyID,
+		AgentAddr:     req.AgentAddr,
+		AnswerText:    req.AnswerText,
+		Reasoning:     sql.NullString{String: req.Reasoning, Valid: req.Reasoning != ""},
+		TxHash:        sql.NullString{String: req.TxHash, Valid: req.TxHash != ""},
+		AttemptNumber: attemptNum,
+		NeuronBurned:  neuronBurned,
+	}
+
+	ctx := c.Request.Context()
+	if _, err := h.repos.BountyAnswers.Create(ctx, answer); err != nil {
 		log.Printf("Internal: bounty-answer-submitted failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record bounty answer"})
 		return
 	}
 
+	// Increment answer count on the bounty
+	if err := h.repos.Bounties.IncrementAnswerCount(ctx, req.BountyID); err != nil {
+		log.Printf("Internal: bounty-answer-submitted IncrementAnswerCount failed: %v", err)
+	}
+
 	h.hub.Broadcast(websocket.WSEvent{
-		Type: "bounty_answer_submitted",
-		Data: map[string]interface{}{
-			"bountyId":  req.BountyID,
-			"agentAddr": req.AgentAddr,
+		Type: websocket.EventBountyAnswerSubmitted,
+		Data: websocket.BountyAnswerSubmittedData{
+			BountyID:      req.BountyID,
+			AgentAddr:     req.AgentAddr,
+			AttemptNumber: attemptNum,
 		},
 	})
+
+	// Forward to Chief for judge evaluation (include txHash for dedup)
+	if h.chiefClient != nil {
+		go h.chiefClient.ReportEvent(context.Background(), chief.EventTypeBountyAnswerSubmitted, req.BountyID, map[string]interface{}{
+			"agent":         req.AgentAddr,
+			"answer":        req.AnswerText,
+			"reasoning":     req.Reasoning,
+			"attemptNumber": float64(attemptNum),
+			"neuronBurned":  neuronBurned,
+			"txHash":        req.TxHash,
+		})
+	}
 
 	c.JSON(http.StatusOK, gin.H{"status": "recorded"})
 }
@@ -375,24 +405,24 @@ func (h *BountyHandler) RecordReputationUpdated(c *gin.Context) {
 
 // BountyUpdateRequest is the generic bounty update from the indexer.
 // The indexer sends different event shapes through the same endpoint:
-// - BountyCreated: bountyId, phase:"open", creator, reward, question, category, difficulty, minRating, joinDeadline, maxAgents
-// - AgentJoinedBounty: bountyId, agent, agentId, agentCount
-// - BountyAnswerPeriodStarted: bountyId, phase:"answer_period", answerTimeout
+// - BountyCreated: bountyId, phase:"active", creator, reward, question, category, difficulty, minRating, deadline, maxAgents, baseAnswerFee
+// - AgentJoinedBounty: bountyId, agent, agentId, agentCount, snapshotReputation
 type BountyUpdateRequest struct {
-	BountyID      int64  `json:"bountyId" binding:"required"`
-	Phase         string `json:"phase"`
-	Creator       string `json:"creator"`
-	Reward        string `json:"reward"`
-	Question      string `json:"question"`
-	Category      string `json:"category"`
-	Difficulty    int    `json:"difficulty"`
-	MinRating     string `json:"minRating"`
-	JoinDeadline  string `json:"joinDeadline"`
-	MaxAgents     int    `json:"maxAgents"`
-	Agent         string `json:"agent"`
-	AgentID       int64  `json:"agentId"`
-	AgentCount    int    `json:"agentCount"`
-	AnswerTimeout string `json:"answerTimeout"`
+	BountyID           int64  `json:"bountyId" binding:"required"`
+	Phase              string `json:"phase"`
+	Creator            string `json:"creator"`
+	Reward             string `json:"reward"`
+	Question           string `json:"question"`
+	Category           string `json:"category"`
+	Difficulty         int    `json:"difficulty"`
+	MinRating          string `json:"minRating"`
+	Deadline           string `json:"deadline"`
+	MaxAgents          int    `json:"maxAgents"`
+	Agent              string `json:"agent"`
+	AgentID            int64  `json:"agentId"`
+	AgentCount         int    `json:"agentCount"`
+	BaseAnswerFee      string `json:"baseAnswerFee"`
+	SnapshotReputation string `json:"snapshotReputation"`
 }
 
 // RecordBountyUpdate handles POST /internal/bounty-update
@@ -407,7 +437,7 @@ func (h *BountyHandler) RecordBountyUpdate(c *gin.Context) {
 
 	// If an agent joined, record the player
 	if req.Agent != "" {
-		if err := h.repos.Bounties.AddPlayer(ctx, req.BountyID, req.Agent); err != nil {
+		if err := h.repos.Bounties.AddPlayer(ctx, req.BountyID, req.Agent, req.AgentID, req.SnapshotReputation); err != nil {
 			log.Printf("Internal: bounty-update AddPlayer failed: %v", err)
 		}
 		h.hub.Broadcast(websocket.WSEvent{
@@ -417,19 +447,22 @@ func (h *BountyHandler) RecordBountyUpdate(c *gin.Context) {
 				AgentAddr: req.Agent,
 			},
 		})
+		// Forward to Chief (include agentId for reputation feedback)
+		if h.chiefClient != nil {
+			go h.chiefClient.ReportEvent(context.Background(), chief.EventTypeAgentJoinedBounty, req.BountyID, map[string]interface{}{
+				"agent":       req.Agent,
+				"agentId":     float64(req.AgentID),
+				"playerCount": float64(req.AgentCount),
+			})
+		}
 		c.JSON(http.StatusOK, gin.H{"status": "player_added", "bountyId": req.BountyID})
 		return
 	}
 
 	// Otherwise upsert the bounty record
 	var deadline sql.NullTime
-	if req.JoinDeadline != "" {
-		if t, err := time.Parse(time.RFC3339, req.JoinDeadline); err == nil {
-			deadline = sql.NullTime{Time: t, Valid: true}
-		}
-	}
-	if req.AnswerTimeout != "" {
-		if t, err := time.Parse(time.RFC3339, req.AnswerTimeout); err == nil {
+	if req.Deadline != "" {
+		if t, err := time.Parse(time.RFC3339, req.Deadline); err == nil {
 			deadline = sql.NullTime{Time: t, Valid: true}
 		}
 	}
@@ -441,6 +474,7 @@ func (h *BountyHandler) RecordBountyUpdate(c *gin.Context) {
 		Category:        sql.NullString{String: req.Category, Valid: req.Category != ""},
 		Difficulty:      req.Difficulty,
 		EntryFee:        req.Reward,
+		BaseAnswerFee:   req.BaseAnswerFee,
 		PoolTotal:       req.Reward,
 		MinRating:       req.MinRating,
 		MaxParticipants: req.MaxAgents,
@@ -456,10 +490,28 @@ func (h *BountyHandler) RecordBountyUpdate(c *gin.Context) {
 	}
 
 	// Broadcast appropriate WS event
-	if req.Phase == "open" {
+	if req.Phase == "active" {
 		h.hub.Broadcast(websocket.WSEvent{
 			Type: websocket.EventBountyCreated,
 			Data: bounty.ToResponse(),
+		})
+	}
+
+	// Forward to Chief for bounty lifecycle management
+	if req.Phase == "active" && h.chiefClient != nil {
+		var deadlineUnix float64
+		if deadline.Valid {
+			deadlineUnix = float64(deadline.Time.Unix())
+		}
+		go h.chiefClient.ReportEvent(context.Background(), chief.EventTypeBountyCreated, req.BountyID, map[string]interface{}{
+			"creator":         req.Creator,
+			"question":        req.Question,
+			"category":        req.Category,
+			"difficulty":      float64(req.Difficulty),
+			"entryFee":        req.Reward,
+			"deadline":        deadlineUnix,
+			"maxParticipants": float64(req.MaxAgents),
+			"minRating":       req.MinRating,
 		})
 	}
 
@@ -534,5 +586,123 @@ func (h *BountyHandler) RecordFeedbackSubmitted(c *gin.Context) {
 	})
 
 	log.Printf("Internal: feedback submitted for agent %d (client=%s, value=%d, tx=%s)", req.AgentID, req.Client, req.Value, req.TxHash)
+	c.JSON(http.StatusOK, gin.H{"status": "recorded"})
+}
+
+// InternalBountyClaimRequest is the request for recording bounty claims.
+type InternalBountyClaimRequest struct {
+	BountyID int64  `json:"bountyId" binding:"required"`
+	Type     string `json:"type" binding:"required"`
+	Winner   string `json:"winner"`
+	Agent    string `json:"agent"`
+	Creator  string `json:"creator"`
+	Amount   string `json:"amount"`
+}
+
+// RecordBountyClaim handles POST /internal/bounty-claim
+func (h *BountyHandler) RecordBountyClaim(c *gin.Context) {
+	var req InternalBountyClaimRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx := c.Request.Context()
+
+	// Determine the claimant address for DB persistence
+	var claimantAddr string
+	switch req.Type {
+	case "winner_reward_claimed":
+		claimantAddr = req.Winner
+	case "proportional_claimed":
+		claimantAddr = req.Agent
+	case "refund_claimed":
+		claimantAddr = req.Creator
+	}
+
+	// Persist claim to DB
+	if claimantAddr != "" {
+		if err := h.repos.BountyClaims.Create(ctx, req.BountyID, req.Type, claimantAddr, req.Amount); err != nil {
+			log.Printf("Internal: bounty-claim persist failed: %v", err)
+		}
+	}
+
+	// Update bounty phase to "refunded" on refund claim (no on-chain phase change for this)
+	if req.Type == "refund_claimed" {
+		if err := h.repos.Bounties.UpdatePhase(ctx, req.BountyID, "refunded"); err != nil {
+			log.Printf("Internal: bounty-claim UpdatePhase to refunded failed: %v", err)
+		}
+	}
+
+	switch req.Type {
+	case "winner_reward_claimed":
+		h.hub.Broadcast(websocket.WSEvent{
+			Type: websocket.EventWinnerRewardClaimed,
+			Data: websocket.WinnerRewardClaimedData{
+				BountyID: req.BountyID,
+				Winner:   req.Winner,
+				Amount:   req.Amount,
+			},
+		})
+	case "proportional_claimed":
+		h.hub.Broadcast(websocket.WSEvent{
+			Type: websocket.EventProportionalClaimed,
+			Data: websocket.ProportionalClaimedData{
+				BountyID: req.BountyID,
+				Agent:    req.Agent,
+				Amount:   req.Amount,
+			},
+		})
+	case "refund_claimed":
+		h.hub.Broadcast(websocket.WSEvent{
+			Type: websocket.EventRefundClaimed,
+			Data: websocket.RefundClaimedData{
+				BountyID: req.BountyID,
+				Creator:  req.Creator,
+				Amount:   req.Amount,
+			},
+		})
+	}
+
+	log.Printf("Internal: bounty-claim type=%s bountyId=%d", req.Type, req.BountyID)
+	c.JSON(http.StatusOK, gin.H{"status": "recorded"})
+}
+
+// BountyAnswerResultRequest is the request from Chief after evaluating a bounty answer.
+type BountyAnswerResultRequest struct {
+	BountyID    int64           `json:"bountyId" binding:"required"`
+	AgentAddr   string          `json:"agentAddr" binding:"required"`
+	TotalScore  int             `json:"totalScore"`
+	Agreement   string          `json:"agreement"`
+	Evaluations json.RawMessage `json:"evaluations,omitempty"`
+}
+
+// RecordBountyAnswerResult handles POST /internal/bounty-answer-result
+func (h *BountyHandler) RecordBountyAnswerResult(c *gin.Context) {
+	var req BountyAnswerResultRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		log.Printf("Internal: bounty-answer-result bad request: %v", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx := c.Request.Context()
+	if err := h.repos.BountyAnswers.UpdateEvaluation(ctx, req.BountyID, req.AgentAddr, req.TotalScore, req.Agreement, req.Evaluations); err != nil {
+		log.Printf("Internal: failed to update bounty answer evaluation bountyId=%d agent=%s: %v", req.BountyID, req.AgentAddr, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update evaluation"})
+		return
+	}
+
+	h.hub.Broadcast(websocket.WSEvent{
+		Type: websocket.EventBountyAnswerEvaluated,
+		Data: websocket.BountyAnswerEvaluatedData{
+			BountyID:   req.BountyID,
+			AgentAddr:  req.AgentAddr,
+			TotalScore: req.TotalScore,
+			Agreement:  req.Agreement,
+		},
+	})
+
+	log.Printf("Internal: bounty-answer-result bountyId=%d agent=%s score=%d agreement=%s", req.BountyID, req.AgentAddr, req.TotalScore, req.Agreement)
 	c.JSON(http.StatusOK, gin.H{"status": "recorded"})
 }

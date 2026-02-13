@@ -137,6 +137,12 @@ const (
 	EventTypeAgentJoinedQueue   = "agent_joined_queue"
 	EventTypeAnswerSubmitted    = "answer_submitted"
 	EventTypeAnswerTimeout      = "answer_timeout"
+
+	// Bounty event types (V2)
+	EventTypeBountyCreated         = "bounty_created"
+	EventTypeAgentJoinedBounty     = "agent_joined_bounty"
+	EventTypeBountyAnswerSubmitted = "bounty_answer_submitted"
+	EventTypeBountySettled         = "bounty_settled"
 )
 
 // MatchDetailResponse is the response from Chief's GET /matches/:matchId endpoint.

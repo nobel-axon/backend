@@ -16,9 +16,14 @@ type AgentStats struct {
 	TotalBurnedNeuron string       `db:"total_burned_neuron" json:"totalBurnedNeuron"`
 	WrongAnswers      int          `db:"wrong_answers" json:"wrongAnswers"`
 	CorrectAnswers    int          `db:"correct_answers" json:"correctAnswers"`
-	AvgAnswerTimeMs   sql.NullInt64 `db:"avg_answer_time_ms" json:"-"`
-	LastActive        sql.NullTime `db:"last_active" json:"-"`
-	FirstSeen         time.Time    `db:"first_seen" json:"firstSeen"`
+	AvgAnswerTimeMs        sql.NullInt64 `db:"avg_answer_time_ms" json:"-"`
+	LastActive             sql.NullTime  `db:"last_active" json:"-"`
+	FirstSeen              time.Time     `db:"first_seen" json:"firstSeen"`
+	ReputationScore        int           `db:"reputation_score" json:"-"`
+	ReputationFeedbackCnt  int           `db:"reputation_feedback_count" json:"-"`
+	ERC8004Registered      bool          `db:"erc8004_registered" json:"-"`
+	BountiesPlayed         int           `db:"bounties_played" json:"-"`
+	BountiesWon            int           `db:"bounties_won" json:"-"`
 }
 
 // AgentStatsResponse is the JSON response for agent stats.
@@ -36,6 +41,8 @@ type AgentStatsResponse struct {
 	AvgAnswerTimeMs   *int64  `json:"avgAnswerTimeMs,omitempty"`
 	LastActive        *string `json:"lastActive,omitempty"`
 	FirstSeen         string  `json:"firstSeen"`
+	ReputationScore   *int    `json:"reputationScore,omitempty"`
+	ERC8004Rating     *int    `json:"erc8004Rating,omitempty"`
 }
 
 // ToResponse converts AgentStats to AgentStatsResponse.
@@ -72,6 +79,15 @@ func (a *AgentStats) ToResponse() AgentStatsResponse {
 		resp.LastActive = &s
 	}
 
+	if a.ReputationScore > 0 {
+		s := a.ReputationScore
+		resp.ReputationScore = &s
+	}
+	if a.ERC8004Registered && a.ReputationScore > 0 {
+		s := a.ReputationScore
+		resp.ERC8004Rating = &s
+	}
+
 	return resp
 }
 
@@ -90,6 +106,20 @@ type LeaderboardEntry struct {
 	WinRate           float64 `json:"winRate"`
 	TotalEarnedMON    string  `json:"totalEarnedMon"`
 	TotalBurnedNeuron string  `json:"totalBurnedNeuron"`
+	ReputationScore   int     `json:"reputationScore,omitempty"`
+}
+
+// AgentEconomics represents the economic metrics for an agent.
+type AgentEconomics struct {
+	AgentAddr            string  `json:"agentAddr"`
+	NeuronBalance        string  `json:"neuronBalance"`
+	TotalSpent           string  `json:"totalSpent"`
+	TotalEarned          string  `json:"totalEarned"`
+	NetPnl               string  `json:"netPnl"`
+	MatchRoi             float64 `json:"matchRoi"`
+	BountyRoi            float64 `json:"bountyRoi"`
+	BountiesParticipated int     `json:"bountiesParticipated"`
+	BountiesWon          int     `json:"bountiesWon"`
 }
 
 // LeaderboardParams represents parameters for the leaderboard query.

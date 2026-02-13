@@ -42,6 +42,10 @@ const (
 	EventBountyAnswerSubmitted = "bounty_answer_submitted"
 	EventAgentJoinedBounty     = "bounty_agent_joined"
 	EventReputationUpdated     = "reputation_updated"
+	EventWinnerRewardClaimed   = "winner_reward_claimed"
+	EventProportionalClaimed   = "proportional_claimed"
+	EventRefundClaimed         = "refund_claimed"
+	EventBountyAnswerEvaluated = "bounty_answer_evaluated"
 )
 
 // MatchCreatedData is the data for match_created events.
@@ -136,26 +140,18 @@ type LobbyGroupExpiredData struct {
 	GroupID string `json:"groupId"`
 }
 
-// BountyCreatedData is the data for bounty_created events.
-type BountyCreatedData struct {
-	BountyID        int64  `json:"bountyId"`
-	CreatorAddress  string `json:"creatorAddress"`
-	QuestionText    string `json:"questionText"`
-	Category        string `json:"category"`
-	EntryFee        string `json:"entryFee"`
-	MaxParticipants int    `json:"maxParticipants"`
-}
-
 // BountySettledData is the data for bounty_settled events.
 type BountySettledData struct {
-	BountyID   int64  `json:"bountyId"`
-	WinnerAddr string `json:"winnerAddr"`
+	BountyID     int64  `json:"bountyId"`
+	WinnerAddr   string `json:"winnerAddr"`
+	RewardAmount string `json:"rewardAmount"`
 }
 
 // BountyAnswerSubmittedData is the data for bounty_answer_submitted events.
 type BountyAnswerSubmittedData struct {
-	BountyID  int64  `json:"bountyId"`
-	AgentAddr string `json:"agentAddr"`
+	BountyID      int64  `json:"bountyId"`
+	AgentAddr     string `json:"agentAddr"`
+	AttemptNumber int    `json:"attemptNumber"`
 }
 
 // AgentJoinedBountyData is the data for agent_joined_bounty events.
@@ -168,4 +164,33 @@ type AgentJoinedBountyData struct {
 type ReputationUpdatedData struct {
 	AgentAddr string `json:"agentAddr"`
 	Score     int    `json:"score"`
+}
+
+// WinnerRewardClaimedData is the data for winner_reward_claimed events.
+type WinnerRewardClaimedData struct {
+	BountyID int64  `json:"bountyId"`
+	Winner   string `json:"winner"`
+	Amount   string `json:"amount"`
+}
+
+// ProportionalClaimedData is the data for proportional_claimed events.
+type ProportionalClaimedData struct {
+	BountyID int64  `json:"bountyId"`
+	Agent    string `json:"agent"`
+	Amount   string `json:"amount"`
+}
+
+// RefundClaimedData is the data for refund_claimed events.
+type RefundClaimedData struct {
+	BountyID int64  `json:"bountyId"`
+	Creator  string `json:"creator"`
+	Amount   string `json:"amount"`
+}
+
+// BountyAnswerEvaluatedData is the data for bounty_answer_evaluated events.
+type BountyAnswerEvaluatedData struct {
+	BountyID   int64  `json:"bountyId"`
+	AgentAddr  string `json:"agentAddr"`
+	TotalScore int    `json:"totalScore"`
+	Agreement  string `json:"agreement"`
 }

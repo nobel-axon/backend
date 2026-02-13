@@ -17,6 +17,8 @@ type Repositories struct {
 	ChainEvents   *ChainEventRepository
 	Bounties      *BountyRepository
 	BountyAnswers *BountyAnswerRepository
+	BountyClaims  *BountyClaimsRepository
+	MatchRefunds  *MatchRefundRepository
 }
 
 // NewRepositories creates all repository instances.
@@ -32,5 +34,7 @@ func NewRepositories(database *db.DB) *Repositories {
 		ChainEvents:   NewChainEventRepository(database),
 		Bounties:      NewBountyRepository(database),
 		BountyAnswers: NewBountyAnswerRepository(database),
+		BountyClaims:  NewBountyClaimsRepository(database),
+		MatchRefunds:  NewMatchRefundRepository(database),
 	}
 }

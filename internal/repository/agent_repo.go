@@ -204,6 +204,7 @@ func (r *AgentRepository) GetLeaderboard(ctx context.Context, params models.Lead
 			WinRate:           winRate,
 			TotalEarnedMON:    s.TotalEarnedMON,
 			TotalBurnedNeuron: s.TotalBurnedNeuron,
+			ReputationScore:   s.ReputationScore,
 		}
 	}
 

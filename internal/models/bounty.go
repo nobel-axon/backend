@@ -15,10 +15,12 @@ type Bounty struct {
 	Category        sql.NullString `db:"category" json:"-"`
 	Difficulty      int            `db:"difficulty" json:"difficulty"`
 	EntryFee        string         `db:"entry_fee" json:"entryFee"`
+	BaseAnswerFee   string         `db:"base_answer_fee" json:"baseAnswerFee"`
 	PoolTotal       string         `db:"pool_total" json:"poolTotal"`
 	MinRating       string         `db:"min_rating" json:"minRating"`
 	MaxParticipants int            `db:"max_participants" json:"maxParticipants"`
 	PlayerCount     int            `db:"player_count" json:"playerCount"`
+	AnswerCount     int            `db:"answer_count" json:"answerCount"`
 	Phase           string         `db:"phase" json:"phase"`
 	Deadline        sql.NullTime   `db:"deadline" json:"-"`
 	WinnerAddress   sql.NullString `db:"winner_address" json:"-"`
@@ -45,6 +47,7 @@ type BountyResponse struct {
 	ExpiresAt       *string `json:"expiresAt,omitempty"`
 	WinnerAddr      *string `json:"winnerAddr,omitempty"`
 	WinnerAnswer    *string `json:"winnerAnswer,omitempty"`
+	BaseAnswerFee   string  `json:"baseAnswerFee,omitempty"`
 	SettleTxHash    *string `json:"settleTxHash,omitempty"`
 	CreatedAt       string  `json:"createdAt"`
 	SettledAt       *string `json:"settledAt,omitempty"`
@@ -62,6 +65,7 @@ func (b *Bounty) ToResponse() BountyResponse {
 		MinRating:       b.MinRating,
 		MaxParticipants: b.MaxParticipants,
 		AgentCount:      b.PlayerCount,
+		AnswerCount:     b.AnswerCount,
 		Phase:           b.Phase,
 		CreatedAt:       b.CreatedAt.Format(time.RFC3339),
 	}
@@ -78,6 +82,9 @@ func (b *Bounty) ToResponse() BountyResponse {
 	if b.SettleTxHash.Valid {
 		resp.SettleTxHash = &b.SettleTxHash.String
 	}
+	if b.BaseAnswerFee != "" && b.BaseAnswerFee != "0" {
+		resp.BaseAnswerFee = b.BaseAnswerFee
+	}
 	if b.SettledAt.Valid {
 		s := b.SettledAt.Time.Format(time.RFC3339)
 		resp.SettledAt = &s
@@ -87,41 +94,47 @@ func (b *Bounty) ToResponse() BountyResponse {
 
 // BountyAnswer represents a bounty answer in the database.
 type BountyAnswer struct {
-	ID          int64           `db:"id" json:"id"`
-	BountyID    int64           `db:"bounty_id" json:"bountyId"`
-	AgentAddr   string          `db:"agent_addr" json:"agentAddr"`
-	AnswerText  string          `db:"answer_text" json:"answerText"`
-	Reasoning   sql.NullString  `db:"reasoning" json:"-"`
-	TotalScore  sql.NullInt32   `db:"total_score" json:"-"`
-	Agreement   sql.NullString  `db:"agreement" json:"-"`
-	Evaluations json.RawMessage `db:"evaluations" json:"-"`
-	TxHash      sql.NullString  `db:"tx_hash" json:"-"`
-	SubmittedAt time.Time       `db:"submitted_at" json:"submittedAt"`
-	EvaluatedAt sql.NullTime    `db:"evaluated_at" json:"-"`
+	ID            int64           `db:"id" json:"id"`
+	BountyID      int64           `db:"bounty_id" json:"bountyId"`
+	AgentAddr     string          `db:"agent_addr" json:"agentAddr"`
+	AnswerText    string          `db:"answer_text" json:"answerText"`
+	Reasoning     sql.NullString  `db:"reasoning" json:"-"`
+	TotalScore    sql.NullInt32   `db:"total_score" json:"-"`
+	Agreement     sql.NullString  `db:"agreement" json:"-"`
+	Evaluations   json.RawMessage `db:"evaluations" json:"-"`
+	TxHash        sql.NullString  `db:"tx_hash" json:"-"`
+	AttemptNumber int             `db:"attempt_number" json:"attemptNumber"`
+	NeuronBurned  string          `db:"neuron_burned" json:"neuronBurned"`
+	SubmittedAt   time.Time       `db:"submitted_at" json:"submittedAt"`
+	EvaluatedAt   sql.NullTime    `db:"evaluated_at" json:"-"`
 }
 
 // BountyAnswerResponse is the JSON response for a bounty answer.
 type BountyAnswerResponse struct {
-	ID          int64           `json:"id"`
-	BountyID    int64           `json:"bountyId"`
-	AgentAddr   string          `json:"agentAddr"`
-	AnswerText  string          `json:"answerText"`
-	Reasoning   string          `json:"reasoning,omitempty"`
-	TotalScore  *int            `json:"totalScore,omitempty"`
-	Agreement   string          `json:"agreement,omitempty"`
-	Evaluations json.RawMessage `json:"evaluations,omitempty"`
-	SubmittedAt string          `json:"submittedAt"`
-	EvaluatedAt *string         `json:"evaluatedAt,omitempty"`
+	ID            int64           `json:"id"`
+	BountyID      int64           `json:"bountyId"`
+	AgentAddr     string          `json:"agentAddr"`
+	AnswerText    string          `json:"answerText"`
+	Reasoning     string          `json:"reasoning,omitempty"`
+	TotalScore    *int            `json:"totalScore,omitempty"`
+	Agreement     string          `json:"agreement,omitempty"`
+	Evaluations   json.RawMessage `json:"evaluations,omitempty"`
+	AttemptNumber int             `json:"attemptNumber"`
+	NeuronBurned  string          `json:"neuronBurned"`
+	SubmittedAt   string          `json:"submittedAt"`
+	EvaluatedAt   *string         `json:"evaluatedAt,omitempty"`
 }
 
 // ToResponse converts a BountyAnswer to BountyAnswerResponse.
 func (a *BountyAnswer) ToResponse() BountyAnswerResponse {
 	resp := BountyAnswerResponse{
-		ID:          a.ID,
-		BountyID:    a.BountyID,
-		AgentAddr:   a.AgentAddr,
-		AnswerText:  a.AnswerText,
-		SubmittedAt: a.SubmittedAt.Format(time.RFC3339),
+		ID:            a.ID,
+		BountyID:      a.BountyID,
+		AgentAddr:     a.AgentAddr,
+		AnswerText:    a.AnswerText,
+		AttemptNumber: a.AttemptNumber,
+		NeuronBurned:  a.NeuronBurned,
+		SubmittedAt:   a.SubmittedAt.Format(time.RFC3339),
 	}
 	if a.Reasoning.Valid {
 		resp.Reasoning = a.Reasoning.String

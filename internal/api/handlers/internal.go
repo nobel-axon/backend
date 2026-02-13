@@ -5,7 +5,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"time"
@@ -370,13 +369,18 @@ func (h *InternalHandler) RecordAnswerResult(c *gin.Context) {
 
 // SettleMatchRequest is the request for settling a match.
 type SettleMatchRequest struct {
-	MatchID      int64  `json:"matchId" binding:"required"`
-	WinnerAddr   string `json:"winnerAddr"`
-	PrizeMON     string `json:"prizeMon"`
-	PrizeNeuron  string `json:"prizeNeuron"`
-	SettleTxHash string `json:"settleTxHash,omitempty"`
-	Reason       string `json:"reason,omitempty"` // For cancellations
-	IsCancelled  bool   `json:"isCancelled"`
+	MatchID        int64  `json:"matchId" binding:"required"`
+	WinnerAddr     string `json:"winnerAddr"`
+	PrizeMON       string `json:"prizeMon"`
+	PrizeNeuron    string `json:"prizeNeuron"`
+	SettleTxHash   string `json:"settleTxHash,omitempty"`
+	TreasuryFee    string `json:"treasuryFee,omitempty"`
+	BurnAllocation string `json:"burnAllocation,omitempty"`
+	Reason         string `json:"reason,omitempty"` // "refunded" or "cancelled"
+	IsCancelled    bool   `json:"isCancelled"`
+	// Fields for refund events
+	RefundPerPlayer string `json:"refundPerPlayer,omitempty"`
+	PlayerCount     int    `json:"playerCount,omitempty"`
 }
 
 // SettleMatch handles POST /internal/match-settled
@@ -428,13 +432,19 @@ func (h *InternalHandler) SettleMatch(c *gin.Context) {
 			}
 		}
 
-		if err := h.repos.Matches.UpdatePhase(ctx, req.MatchID, "cancelled"); err != nil {
-			log.Printf("Failed to cancel match %d: %v", req.MatchID, err)
+		// Use reason to distinguish refunded vs cancelled phase
+		phase := "cancelled"
+		if req.Reason == "refunded" {
+			phase = "refunded"
+		}
+
+		if err := h.repos.Matches.UpdatePhase(ctx, req.MatchID, phase); err != nil {
+			log.Printf("Failed to cancel/refund match %d: %v", req.MatchID, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to cancel match"})
 			return
 		}
 
-		// Broadcast cancellation
+		// Broadcast cancellation/refund
 		h.hub.Broadcast(websocket.WSEvent{
 			Type: "match_cancelled",
 			Data: map[string]interface{}{
@@ -443,12 +453,12 @@ func (h *InternalHandler) SettleMatch(c *gin.Context) {
 			},
 		})
 
-		c.JSON(http.StatusOK, gin.H{"status": "cancelled"})
+		c.JSON(http.StatusOK, gin.H{"status": phase})
 		return
 	}
 
-	// Set winner
-	if err := h.repos.Matches.SetWinner(ctx, req.MatchID, req.WinnerAddr, req.SettleTxHash); err != nil {
+	// Set winner with settlement details
+	if err := h.repos.Matches.SetWinner(ctx, req.MatchID, req.WinnerAddr, req.SettleTxHash, req.TreasuryFee, req.BurnAllocation); err != nil {
 		log.Printf("Failed to settle match %d: %v", req.MatchID, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to settle match"})
 		return
@@ -550,7 +560,6 @@ func (h *InternalHandler) RecordAnswerSubmitted(c *gin.Context) {
 	// Chief already knows about those — forwarding would create a bounce-back loop.
 	if req.TxHash != "" {
 		go func() {
-			txIndex := fmt.Sprintf("%d", req.LogIndex)
 			_, err := h.chiefClient.ReportEvent(context.Background(), chief.EventTypeAnswerSubmitted, req.MatchID, map[string]interface{}{
 				"agent":         req.Agent,
 				"answer":        req.Answer,
@@ -558,7 +567,7 @@ func (h *InternalHandler) RecordAnswerSubmitted(c *gin.Context) {
 				"neuronBurned":  req.NeuronBurned,
 				"blockNumber":   0,
 				"txHash":        req.TxHash,
-				"txIndex":       txIndex,
+				"txIndex":       req.LogIndex,
 			})
 			if err != nil {
 				log.Printf("Failed to forward answer_submitted for match %d to Chief: %v", req.MatchID, err)
@@ -633,4 +642,81 @@ func (h *InternalHandler) RecordAnswerRevealed(c *gin.Context) {
 	})
 
 	c.JSON(http.StatusOK, gin.H{"status": "revealed"})
+}
+
+// BurnAllocationClaimedRequest is the request from the indexer for BurnAllocationClaimed events.
+type BurnAllocationClaimedRequest struct {
+	Operator string `json:"operator" binding:"required"`
+	Winner   string `json:"winner" binding:"required"`
+	Amount   string `json:"amount" binding:"required"`
+}
+
+// RecordBurnAllocationClaimed handles POST /internal/burn-allocation-claimed
+func (h *InternalHandler) RecordBurnAllocationClaimed(c *gin.Context) {
+	var req BurnAllocationClaimedRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx := c.Request.Context()
+	if err := h.repos.MatchRefunds.RecordBurnAllocationClaimed(ctx, req.Operator, req.Winner, req.Amount); err != nil {
+		log.Printf("Internal: failed to record burn allocation claimed: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record burn allocation claim"})
+		return
+	}
+
+	log.Printf("Internal: burn-allocation-claimed operator=%s winner=%s amount=%s", req.Operator, req.Winner, req.Amount)
+	c.JSON(http.StatusOK, gin.H{"status": "recorded"})
+}
+
+// RefundCreditedRequest is the request from the indexer for RefundCredited events.
+type RefundCreditedRequest struct {
+	MatchID int64  `json:"matchId" binding:"required"`
+	Player  string `json:"player" binding:"required"`
+	Amount  string `json:"amount" binding:"required"`
+}
+
+// RecordRefundCredited handles POST /internal/refund-credited
+func (h *InternalHandler) RecordRefundCredited(c *gin.Context) {
+	var req RefundCreditedRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx := c.Request.Context()
+	if err := h.repos.MatchRefunds.RecordRefundCredited(ctx, req.MatchID, req.Player, req.Amount); err != nil {
+		log.Printf("Internal: failed to record refund credited matchId=%d player=%s: %v", req.MatchID, req.Player, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record refund credit"})
+		return
+	}
+
+	log.Printf("Internal: refund-credited matchId=%d player=%s amount=%s", req.MatchID, req.Player, req.Amount)
+	c.JSON(http.StatusOK, gin.H{"status": "recorded"})
+}
+
+// RefundWithdrawnRequest is the request from the indexer for RefundWithdrawn events.
+type RefundWithdrawnRequest struct {
+	Player string `json:"player" binding:"required"`
+	Amount string `json:"amount" binding:"required"`
+}
+
+// RecordRefundWithdrawn handles POST /internal/refund-withdrawn
+func (h *InternalHandler) RecordRefundWithdrawn(c *gin.Context) {
+	var req RefundWithdrawnRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx := c.Request.Context()
+	if err := h.repos.MatchRefunds.RecordRefundWithdrawn(ctx, req.Player); err != nil {
+		log.Printf("Internal: failed to record refund withdrawn player=%s: %v", req.Player, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record refund withdrawal"})
+		return
+	}
+
+	log.Printf("Internal: refund-withdrawn player=%s amount=%s", req.Player, req.Amount)
+	c.JSON(http.StatusOK, gin.H{"status": "recorded"})
 }

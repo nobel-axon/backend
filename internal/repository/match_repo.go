@@ -146,11 +146,15 @@ func (r *MatchRepository) UpdatePhase(ctx context.Context, matchID int64, phase 
 	return err
 }
 
-// SetWinner sets the winner of a match.
-func (r *MatchRepository) SetWinner(ctx context.Context, matchID int64, winnerAddr string, settleTxHash string) error {
+// SetWinner sets the winner of a match with settlement details.
+func (r *MatchRepository) SetWinner(ctx context.Context, matchID int64, winnerAddr string, settleTxHash string, treasuryFee string, burnAllocation string) error {
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE app_matches SET winner_address = $2, phase = 'settled', settled_at = $3, settle_tx_hash = NULLIF($4, '') WHERE match_id = $1`,
-		matchID, winnerAddr, time.Now(), settleTxHash,
+		`UPDATE app_matches SET winner_address = $2, phase = 'settled', settled_at = $3,
+			settle_tx_hash = COALESCE(NULLIF($4, ''), settle_tx_hash),
+			treasury_fee = COALESCE(NULLIF($5, ''), treasury_fee),
+			burn_allocation = COALESCE(NULLIF($6, ''), burn_allocation)
+		WHERE match_id = $1`,
+		matchID, winnerAddr, time.Now(), settleTxHash, treasuryFee, burnAllocation,
 	)
 	return err
 }

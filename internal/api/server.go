@@ -76,7 +76,7 @@ func (s *Server) SetupRoutes(r *gin.Engine, hub *websocket.Hub) {
 	agentHandler := handlers.NewAgentHandler(s.repos)
 	statsHandler := handlers.NewStatsHandler(s.repos)
 	internalHandler := handlers.NewInternalHandler(s.repos, hub, s.chiefClient)
-	bountyHandler := handlers.NewBountyHandler(s.repos, hub)
+	bountyHandler := handlers.NewBountyHandler(s.repos, hub, s.chiefClient)
 
 	// Health check
 	r.GET("/health", handlers.Health(s.db))
@@ -111,6 +111,7 @@ func (s *Server) SetupRoutes(r *gin.Engine, hub *websocket.Hub) {
 		// Agent
 		api.GET("/agent/:address", agentHandler.GetAgentProfile)
 		api.GET("/agent/:address/history", agentHandler.GetAgentHistory)
+		api.GET("/agent/:address/economics", agentHandler.GetAgentEconomics)
 
 		// Stats
 		api.GET("/stats", statsHandler.GetGlobalStats)
@@ -138,14 +139,20 @@ func (s *Server) SetupRoutes(r *gin.Engine, hub *websocket.Hub) {
 		internal.POST("/answer-revealed", internalHandler.RecordAnswerRevealed)
 		internal.POST("/match-personalities", internalHandler.StorePersonalities)
 
+		// Match refund/burn tracking
+		internal.POST("/burn-allocation-claimed", internalHandler.RecordBurnAllocationClaimed)
+		internal.POST("/refund-credited", internalHandler.RecordRefundCredited)
+		internal.POST("/refund-withdrawn", internalHandler.RecordRefundWithdrawn)
+
 		// Bounty internal endpoints (V2)
-		internal.POST("/bounty-created", bountyHandler.RecordBountyCreated)
 		internal.POST("/bounty-settled", bountyHandler.RecordBountySettled)
 		internal.POST("/bounty-answer-submitted", bountyHandler.RecordBountyAnswerSubmitted)
 		internal.POST("/reputation-updated", bountyHandler.RecordReputationUpdated)
 		internal.POST("/bounty-update", bountyHandler.RecordBountyUpdate)
 		internal.POST("/agent-registered", bountyHandler.RecordAgentRegistered)
 		internal.POST("/feedback-submitted", bountyHandler.RecordFeedbackSubmitted)
+		internal.POST("/bounty-claim", bountyHandler.RecordBountyClaim)
+		internal.POST("/bounty-answer-result", bountyHandler.RecordBountyAnswerResult)
 	}
 
 	// Lobby routes (if enabled)
