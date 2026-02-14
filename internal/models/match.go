@@ -43,6 +43,8 @@ type Match struct {
 	RegistrationReportedAt sql.NullTime   `db:"registration_reported_at" json:"-"`
 	TimeoutReportedAt      sql.NullTime   `db:"timeout_reported_at" json:"-"`
 	SettleTxHash           sql.NullString `db:"settle_tx_hash" json:"-"`
+	TreasuryFee            sql.NullString `db:"treasury_fee" json:"-"`
+	BurnAllocation         sql.NullString `db:"burn_allocation" json:"-"`
 }
 
 // MatchResponse is the JSON response for a match.
