@@ -50,8 +50,8 @@ func (r *BountyRepository) GetByID(ctx context.Context, bountyID int64) (*models
 	return &bounty, nil
 }
 
-// List retrieves bounties with optional phase and category filters and pagination.
-func (r *BountyRepository) List(ctx context.Context, phase, category string, limit, offset int) ([]models.Bounty, error) {
+// List retrieves bounties with optional phase, category, and creator filters and pagination.
+func (r *BountyRepository) List(ctx context.Context, phase, category, creator string, limit, offset int) ([]models.Bounty, error) {
 	var bounties []models.Bounty
 
 	query := `SELECT * FROM app_bounties WHERE 1=1`
@@ -66,6 +66,11 @@ func (r *BountyRepository) List(ctx context.Context, phase, category string, lim
 	if category != "" {
 		query += ` AND category = $` + strconv.Itoa(argIdx)
 		args = append(args, category)
+		argIdx++
+	}
+	if creator != "" {
+		query += ` AND LOWER(creator_address) = LOWER($` + strconv.Itoa(argIdx) + `)`
+		args = append(args, creator)
 		argIdx++
 	}
 

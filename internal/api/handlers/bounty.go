@@ -35,6 +35,7 @@ func NewBountyHandler(repos *repository.Repositories, hub *websocket.Hub, chiefC
 func (h *BountyHandler) ListBounties(c *gin.Context) {
 	phase := c.Query("phase")
 	category := c.Query("category")
+	creator := c.Query("creator")
 	includeRejected := c.Query("include_rejected") == "true"
 	limit := 50
 	offset := 0
@@ -51,7 +52,7 @@ func (h *BountyHandler) ListBounties(c *gin.Context) {
 	}
 
 	ctx := c.Request.Context()
-	bounties, err := h.repos.Bounties.List(ctx, phase, category, limit, offset)
+	bounties, err := h.repos.Bounties.List(ctx, phase, category, creator, limit, offset)
 	if err != nil {
 		log.Printf("ListBounties: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch bounties"})
