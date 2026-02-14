@@ -209,10 +209,32 @@ func (h *BountyHandler) GetAgentReputation(c *gin.Context) {
 		return
 	}
 
-	score, feedbackCount, registered, err := h.repos.Agents.GetReputation(c.Request.Context(), address)
+	ctx := c.Request.Context()
+
+	// Fetch bounty participation stats (non-fatal if it fails)
+	bountiesPlayed, bountiesWon, _ := h.repos.Bounties.CountPlayerBounties(ctx, address)
+
+	score, feedbackCount, registered, err := h.repos.Agents.GetReputation(ctx, address)
 	if err != nil {
 		if err == sql.ErrNoRows {
-			c.JSON(http.StatusOK, models.ReputationResponse{AgentAddr: address})
+			// Check indexer tables for ERC-8004 registration and reputation data
+			idxScore, idxCount, idxReg := h.repos.Agents.GetReputationFromIndexer(ctx, address)
+			if idxReg || idxCount > 0 {
+				c.JSON(http.StatusOK, models.ReputationResponse{
+					AgentAddr:             address,
+					ReputationScore:       idxScore,
+					ReputationFeedbackCnt: idxCount,
+					ERC8004Registered:     idxReg,
+					BountiesPlayed:        bountiesPlayed,
+					BountiesWon:           bountiesWon,
+				})
+				return
+			}
+			c.JSON(http.StatusOK, models.ReputationResponse{
+				AgentAddr:      address,
+				BountiesPlayed: bountiesPlayed,
+				BountiesWon:    bountiesWon,
+			})
 			return
 		}
 		log.Printf("GetAgentReputation: %v", err)
@@ -225,6 +247,8 @@ func (h *BountyHandler) GetAgentReputation(c *gin.Context) {
 		ReputationScore:       score,
 		ReputationFeedbackCnt: feedbackCount,
 		ERC8004Registered:     registered,
+		BountiesPlayed:        bountiesPlayed,
+		BountiesWon:           bountiesWon,
 	})
 }
 
@@ -619,11 +643,24 @@ func (h *BountyHandler) RecordFeedbackSubmitted(c *gin.Context) {
 		return
 	}
 
-	// Convert agentId to wallet address if needed — for now use the client field
-	// The reputation update uses the value as the score delta
-	wallet := req.Client
+	// Look up the agent's wallet from agentId (the agent who received feedback)
+	var wallet string
+	if req.AgentID > 0 {
+		w, err := h.repos.Agents.GetWalletByERC8004AgentID(c.Request.Context(), req.AgentID)
+		if err == nil && w != "" {
+			wallet = w
+		} else {
+			// Fallback: query indexer's chain_agent_registered table (shared PG)
+			w, err := h.repos.Agents.GetWalletByERC8004AgentIDFromIndexer(c.Request.Context(), req.AgentID)
+			if err == nil && w != "" {
+				wallet = w
+				// Backfill the app_agent_stats record
+				_ = h.repos.Agents.SetERC8004Registered(c.Request.Context(), w, req.AgentID)
+			}
+		}
+	}
 	if wallet == "" {
-		log.Printf("Internal: feedback-submitted missing client address, skipping reputation update")
+		log.Printf("Internal: feedback-submitted could not resolve wallet for agentId=%d, skipping", req.AgentID)
 		c.JSON(http.StatusOK, gin.H{"status": "skipped"})
 		return
 	}

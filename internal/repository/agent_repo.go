@@ -271,6 +271,52 @@ func (r *AgentRepository) SetERC8004Registered(ctx context.Context, agentAddr st
 	return err
 }
 
+// GetWalletByERC8004AgentID returns the wallet address for an ERC-8004 agentId.
+func (r *AgentRepository) GetWalletByERC8004AgentID(ctx context.Context, agentId int64) (string, error) {
+	var wallet string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT agent_addr FROM app_agent_stats WHERE erc8004_agent_id = $1`,
+		agentId,
+	).Scan(&wallet)
+	return wallet, err
+}
+
+// GetReputationFromIndexer checks the indexer's chain tables for registration and feedback data.
+func (r *AgentRepository) GetReputationFromIndexer(ctx context.Context, agentAddr string) (int, int, bool) {
+	// Check registration
+	var registered bool
+	var agentId int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT "agentId" FROM chain_agent_registered WHERE LOWER(owner) = LOWER($1) LIMIT 1`,
+		agentAddr,
+	).Scan(&agentId)
+	if err == nil && agentId > 0 {
+		registered = true
+		// Count feedback and sum scores from indexer
+		var count int
+		var totalScore int64
+		err = r.db.QueryRowContext(ctx,
+			`SELECT COUNT(*), COALESCE(SUM(value), 0) FROM chain_feedback_given WHERE "agentId" = $1`,
+			agentId,
+		).Scan(&count, &totalScore)
+		if err == nil {
+			return int(totalScore), count, registered
+		}
+		return 0, 0, registered
+	}
+	return 0, 0, false
+}
+
+// GetWalletByERC8004AgentIDFromIndexer looks up the agent's wallet from the indexer's chain_agent_registered table.
+func (r *AgentRepository) GetWalletByERC8004AgentIDFromIndexer(ctx context.Context, agentId int64) (string, error) {
+	var wallet string
+	err := r.db.QueryRowContext(ctx,
+		`SELECT owner FROM chain_agent_registered WHERE "agentId" = $1 LIMIT 1`,
+		agentId,
+	).Scan(&wallet)
+	return wallet, err
+}
+
 // GetERC8004AgentID returns the ERC-8004 agentId for a wallet address.
 func (r *AgentRepository) GetERC8004AgentID(ctx context.Context, agentAddr string) (int64, error) {
 	var agentId int64
