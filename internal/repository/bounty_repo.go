@@ -206,7 +206,7 @@ func (r *BountyRepository) CountPlayerBounties(ctx context.Context, addr string)
 	err = r.db.QueryRowContext(ctx,
 		`SELECT
 			COUNT(*) as played,
-			COUNT(CASE WHEN b.winner_address = LOWER($1) THEN 1 END) as won
+			COUNT(CASE WHEN LOWER(b.winner_address) = LOWER($1) THEN 1 END) as won
 		FROM app_bounty_players bp
 		JOIN app_bounties b ON b.bounty_id = bp.bounty_id
 		WHERE LOWER(bp.agent_addr) = LOWER($1)`,
