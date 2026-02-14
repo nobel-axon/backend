@@ -177,14 +177,21 @@ func (h *InternalHandler) UpdateMatch(c *gin.Context) {
 		agent := *req.Agent
 		matchID := req.MatchID
 		go func() {
+			// Look up ERC-8004 agentId for this wallet
+			var agentId int64
+			if id, err := h.repos.Agents.GetERC8004AgentID(context.Background(), agent); err == nil {
+				agentId = id
+			}
+
 			_, err := h.chiefClient.ReportEvent(context.Background(), chief.EventTypeAgentJoinedQueue, matchID, map[string]interface{}{
 				"agent":       agent,
 				"playerCount": playerCount,
+				"agentId":     agentId,
 			})
 			if err != nil {
 				log.Printf("Failed to forward agent_joined_queue for match %d to Chief: %v", matchID, err)
 			} else {
-				log.Printf("Forwarded agent_joined_queue for match %d to Chief (agent=%s)", matchID, agent)
+				log.Printf("Forwarded agent_joined_queue for match %d to Chief (agent=%s, agentId=%d)", matchID, agent, agentId)
 			}
 		}()
 

@@ -590,7 +590,7 @@ func (h *BountyHandler) RecordAgentRegistered(c *gin.Context) {
 		return
 	}
 
-	if err := h.repos.Agents.SetERC8004Registered(c.Request.Context(), req.Wallet); err != nil {
+	if err := h.repos.Agents.SetERC8004Registered(c.Request.Context(), req.Wallet, req.AgentID); err != nil {
 		log.Printf("Internal: agent-registered failed: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to record agent registration"})
 		return

@@ -1,0 +1,1 @@
+ALTER TABLE app_agent_stats ADD COLUMN IF NOT EXISTS erc8004_agent_id BIGINT;

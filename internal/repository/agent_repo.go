@@ -257,17 +257,28 @@ func (r *AgentRepository) GetReputation(ctx context.Context, agentAddr string) (
 	return score, feedbackCount, registered, nil
 }
 
-// SetERC8004Registered marks an agent as registered in the ERC-8004 registry.
-func (r *AgentRepository) SetERC8004Registered(ctx context.Context, agentAddr string) error {
+// SetERC8004Registered marks an agent as registered in the ERC-8004 registry and stores the agentId.
+func (r *AgentRepository) SetERC8004Registered(ctx context.Context, agentAddr string, agentId int64) error {
 	_, err := r.db.ExecContext(ctx,
-		`INSERT INTO app_agent_stats (agent_addr, erc8004_registered, last_active)
-		VALUES (LOWER($1), TRUE, NOW())
+		`INSERT INTO app_agent_stats (agent_addr, erc8004_registered, erc8004_agent_id, last_active)
+		VALUES (LOWER($1), TRUE, $2, NOW())
 		ON CONFLICT (agent_addr) DO UPDATE SET
 			erc8004_registered = TRUE,
+			erc8004_agent_id = $2,
 			last_active = NOW()`,
-		agentAddr,
+		agentAddr, agentId,
 	)
 	return err
+}
+
+// GetERC8004AgentID returns the ERC-8004 agentId for a wallet address.
+func (r *AgentRepository) GetERC8004AgentID(ctx context.Context, agentAddr string) (int64, error) {
+	var agentId int64
+	err := r.db.QueryRowContext(ctx,
+		`SELECT erc8004_agent_id FROM app_agent_stats WHERE LOWER(agent_addr) = LOWER($1) AND erc8004_agent_id IS NOT NULL`,
+		agentAddr,
+	).Scan(&agentId)
+	return agentId, err
 }
 
 // AddBurnedNeuron adds to the total burned neuron for an agent.
