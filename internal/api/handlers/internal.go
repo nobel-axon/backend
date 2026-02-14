@@ -5,11 +5,14 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/jmoiron/sqlx"
 
 	"github.com/axon-arena/axon-server/internal/chief"
 	"github.com/axon-arena/axon-server/internal/models"
@@ -394,6 +397,8 @@ type SettleMatchRequest struct {
 }
 
 // SettleMatch handles POST /internal/match-settled
+// Uses a DB transaction with SELECT ... FOR UPDATE to prevent duplicate settlements
+// from concurrent indexer replay events.
 func (h *InternalHandler) SettleMatch(c *gin.Context) {
 	var req SettleMatchRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -410,51 +415,105 @@ func (h *InternalHandler) SettleMatch(c *gin.Context) {
 
 	ctx := c.Request.Context()
 
-	// Idempotency guard: skip if match is already in a terminal phase
-	existing, err := h.repos.Matches.GetByID(ctx, req.MatchID)
-	if err != nil || existing == nil {
-		log.Printf("Internal: match %d not found", req.MatchID)
-		c.JSON(http.StatusNotFound, gin.H{"error": "Match not found"})
-		return
-	}
-	if !req.IsCancelled && (existing.Phase == "settled" || existing.Phase == "cancelled") {
-		log.Printf("Internal: match %d already %s, skipping settle", req.MatchID, existing.Phase)
-		c.JSON(http.StatusOK, gin.H{"status": "already_" + existing.Phase})
-		return
-	}
-
-	// Update match status
-	if req.IsCancelled {
-		// Rollback agent stats if match was previously settled with a winner
-		if existing.Phase == "settled" && existing.WinnerAddress.Valid {
-			log.Printf("Internal: rolling back stats for cancelled match %d (was settled, winner: %s)", req.MatchID, existing.WinnerAddress.String)
-			if err := h.repos.Agents.RollbackWin(ctx, existing.WinnerAddress.String, req.PrizeMON, req.PrizeNeuron); err != nil {
-				log.Printf("Failed to rollback winner stats for match %d: %v", req.MatchID, err)
+	// Wrap the entire settle in a transaction with row-level locking.
+	var resultStatus string
+	err := h.repos.DB().Transaction(ctx, func(tx *sqlx.Tx) error {
+		// Lock the match row and read its current phase atomically.
+		var phase string
+		err := tx.QueryRowContext(ctx,
+			`SELECT phase FROM app_matches WHERE match_id = $1 FOR UPDATE`,
+			req.MatchID,
+		).Scan(&phase)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("match not found")
 			}
-			// Rollback matches_played for all players
-			players, err := h.repos.Matches.GetPlayers(ctx, req.MatchID)
-			if err == nil {
-				for _, p := range players {
-					if err := h.repos.Agents.DecrementMatchesPlayed(ctx, p.AgentAddr); err != nil {
-						log.Printf("Failed to decrement matches_played for %s: %v", p.AgentAddr, err)
+			return err
+		}
+
+		// Idempotency: if already in terminal phase, skip.
+		if !req.IsCancelled && (phase == "settled" || phase == "cancelled") {
+			resultStatus = "already_" + phase
+			log.Printf("Internal: match %d already %s, skipping settle", req.MatchID, phase)
+			return nil
+		}
+
+		if req.IsCancelled {
+			// Rollback agent stats if match was previously settled with a winner
+			if phase == "settled" {
+				var winnerAddr sql.NullString
+				_ = tx.QueryRowContext(ctx,
+					`SELECT winner_address FROM app_matches WHERE match_id = $1`,
+					req.MatchID,
+				).Scan(&winnerAddr)
+
+				if winnerAddr.Valid {
+					log.Printf("Internal: rolling back stats for cancelled match %d (was settled, winner: %s)", req.MatchID, winnerAddr.String)
+					if err := h.repos.Agents.RollbackWin(ctx, winnerAddr.String, req.PrizeMON, req.PrizeNeuron); err != nil {
+						log.Printf("Failed to rollback winner stats for match %d: %v", req.MatchID, err)
+					}
+					players, err := h.repos.Matches.GetPlayers(ctx, req.MatchID)
+					if err == nil {
+						for _, p := range players {
+							if err := h.repos.Agents.DecrementMatchesPlayed(ctx, p.AgentAddr); err != nil {
+								log.Printf("Failed to decrement matches_played for %s: %v", p.AgentAddr, err)
+							}
+						}
 					}
 				}
 			}
+
+			newPhase := "cancelled"
+			if req.Reason == "refunded" {
+				newPhase = "refunded"
+			}
+
+			if _, err := tx.ExecContext(ctx,
+				`UPDATE app_matches SET phase = $2 WHERE match_id = $1`,
+				req.MatchID, newPhase,
+			); err != nil {
+				return fmt.Errorf("failed to cancel/refund match: %w", err)
+			}
+
+			resultStatus = newPhase
+			return nil
 		}
 
-		// Use reason to distinguish refunded vs cancelled phase
-		phase := "cancelled"
-		if req.Reason == "refunded" {
-			phase = "refunded"
+		// Normal settlement: set winner inside the transaction.
+		winnerAddr := strings.ToLower(req.WinnerAddr)
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE app_matches SET winner_address = $2, phase = 'settled', settled_at = $3,
+				settle_tx_hash = COALESCE(NULLIF($4, ''), settle_tx_hash),
+				treasury_fee = COALESCE(NULLIF($5, ''), treasury_fee),
+				burn_allocation = COALESCE(NULLIF($6, ''), burn_allocation)
+			WHERE match_id = $1`,
+			req.MatchID, winnerAddr, time.Now(), req.SettleTxHash, req.TreasuryFee, req.BurnAllocation,
+		); err != nil {
+			return fmt.Errorf("failed to settle match: %w", err)
 		}
 
-		if err := h.repos.Matches.UpdatePhase(ctx, req.MatchID, phase); err != nil {
-			log.Printf("Failed to cancel/refund match %d: %v", req.MatchID, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to cancel match"})
+		resultStatus = "settled"
+		return nil
+	})
+
+	if err != nil {
+		if err.Error() == "match not found" {
+			log.Printf("Internal: match %d not found", req.MatchID)
+			c.JSON(http.StatusNotFound, gin.H{"error": "Match not found"})
 			return
 		}
+		log.Printf("Failed to settle match %d: %v", req.MatchID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to settle match"})
+		return
+	}
 
-		// Broadcast cancellation/refund
+	// Early return for idempotent no-ops and cancellations.
+	if strings.HasPrefix(resultStatus, "already_") {
+		c.JSON(http.StatusOK, gin.H{"status": resultStatus})
+		return
+	}
+
+	if resultStatus == "cancelled" || resultStatus == "refunded" {
 		h.hub.Broadcast(websocket.WSEvent{
 			Type: websocket.EventMatchCancelled,
 			Data: websocket.MatchCancelledData{
@@ -462,19 +521,11 @@ func (h *InternalHandler) SettleMatch(c *gin.Context) {
 				Reason:  req.Reason,
 			},
 		})
-
-		c.JSON(http.StatusOK, gin.H{"status": phase})
+		c.JSON(http.StatusOK, gin.H{"status": resultStatus})
 		return
 	}
 
-	// Set winner with settlement details
-	if err := h.repos.Matches.SetWinner(ctx, req.MatchID, req.WinnerAddr, req.SettleTxHash, req.TreasuryFee, req.BurnAllocation); err != nil {
-		log.Printf("Failed to settle match %d: %v", req.MatchID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to settle match"})
-		return
-	}
-
-	// Update winner's stats
+	// Update winner's stats (outside the transaction — these are idempotent-safe via ON CONFLICT)
 	if req.WinnerAddr != "" {
 		if err := h.repos.Agents.RecordWin(ctx, req.WinnerAddr, req.PrizeMON, req.PrizeNeuron); err != nil {
 			log.Printf("Failed to update winner stats: %v", err)

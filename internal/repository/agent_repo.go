@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/axon-arena/axon-server/internal/db"
@@ -39,6 +40,7 @@ func (r *AgentRepository) GetByAddress(ctx context.Context, agentAddr string) (*
 
 // Upsert creates or updates agent stats.
 func (r *AgentRepository) Upsert(ctx context.Context, stats *models.AgentStats) error {
+	addr := strings.ToLower(stats.AgentAddr)
 	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO app_agent_stats (agent_addr, matches_played, matches_won, total_earned_mon,
 			total_earned_neuron, total_burned_neuron, wrong_answers, correct_answers,
@@ -48,7 +50,7 @@ func (r *AgentRepository) Upsert(ctx context.Context, stats *models.AgentStats) 
 			matches_played = $2, matches_won = $3, total_earned_mon = $4,
 			total_earned_neuron = $5, total_burned_neuron = $6, wrong_answers = $7,
 			correct_answers = $8, avg_answer_time_ms = $9, last_active = $10`,
-		stats.AgentAddr, stats.MatchesPlayed, stats.MatchesWon, stats.TotalEarnedMON,
+		addr, stats.MatchesPlayed, stats.MatchesWon, stats.TotalEarnedMON,
 		stats.TotalEarnedNeuron, stats.TotalBurnedNeuron, stats.WrongAnswers,
 		stats.CorrectAnswers, stats.AvgAnswerTimeMs, stats.LastActive, stats.FirstSeen,
 	)
@@ -63,7 +65,7 @@ func (r *AgentRepository) IncrementMatchesPlayed(ctx context.Context, agentAddr 
 		ON CONFLICT (agent_addr) DO UPDATE SET
 			matches_played = app_agent_stats.matches_played + 1,
 			last_active = NOW()`,
-		agentAddr,
+		strings.ToLower(agentAddr),
 	)
 	return err
 }
@@ -86,7 +88,7 @@ func (r *AgentRepository) RecordWin(ctx context.Context, agentAddr string, earne
 			total_earned_mon = (COALESCE(app_agent_stats.total_earned_mon::numeric, 0) + $2::numeric)::text,
 			total_earned_neuron = (COALESCE(app_agent_stats.total_earned_neuron::numeric, 0) + $3::numeric)::text,
 			last_active = NOW()`,
-		agentAddr, earnedMON, earnedNeuron,
+		strings.ToLower(agentAddr), earnedMON, earnedNeuron,
 	)
 	return err
 }
@@ -109,7 +111,7 @@ func (r *AgentRepository) RecordAnswer(ctx context.Context, agentAddr string, is
 			wrong_answers = app_agent_stats.wrong_answers + $3,
 			total_burned_neuron = (COALESCE(app_agent_stats.total_burned_neuron::numeric, 0) + $4::numeric)::text,
 			last_active = NOW()`,
-		agentAddr, correctInc, wrongInc, neuronBurned,
+		strings.ToLower(agentAddr), correctInc, wrongInc, neuronBurned,
 	)
 	return err
 }
@@ -327,6 +329,25 @@ func (r *AgentRepository) GetERC8004AgentID(ctx context.Context, agentAddr strin
 	return agentId, err
 }
 
+// GetTotalMonSpent returns total MON entry fees spent by an agent across all settled matches.
+func (r *AgentRepository) GetTotalMonSpent(ctx context.Context, agentAddr string) (string, error) {
+	var total sql.NullString
+	err := r.db.GetContext(ctx, &total,
+		`SELECT COALESCE(SUM(m.entry_fee::numeric), 0)::text
+		FROM app_match_players p
+		JOIN app_matches m ON m.match_id = p.match_id
+		WHERE LOWER(p.agent_addr) = LOWER($1) AND m.phase = 'settled'`,
+		agentAddr,
+	)
+	if err != nil {
+		return "0", err
+	}
+	if !total.Valid {
+		return "0", nil
+	}
+	return total.String, nil
+}
+
 // AddBurnedNeuron adds to the total burned neuron for an agent.
 func (r *AgentRepository) AddBurnedNeuron(ctx context.Context, agentAddr string, amount string) error {
 	amountBig, ok := new(big.Int).SetString(amount, 10)
@@ -340,7 +361,7 @@ func (r *AgentRepository) AddBurnedNeuron(ctx context.Context, agentAddr string,
 		ON CONFLICT (agent_addr) DO UPDATE SET
 			total_burned_neuron = (COALESCE(app_agent_stats.total_burned_neuron::numeric, 0) + $2::numeric)::text,
 			last_active = NOW()`,
-		agentAddr, amountBig.String(),
+		strings.ToLower(agentAddr), amountBig.String(),
 	)
 	return err
 }

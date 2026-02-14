@@ -174,18 +174,27 @@ func (h *AgentHandler) GetAgentEconomics(c *gin.Context) {
 		return
 	}
 
-	// Defaults for agents with no stats
-	totalSpent := "0"
-	totalEarned := "0"
-	netPnl := "0"
+	// MON-only PnL: earned (prizes) minus spent (entry fees)
+	totalSpentMon := "0"
+	totalEarnedMon := "0"
+	netPnlMon := "0"
+	totalBurnedNeuron := "0"
 	var matchRoi float64
 
 	if stats != nil {
-		totalSpent = stats.TotalBurnedNeuron
-		totalEarned = stats.TotalEarnedMON
+		totalEarnedMon = stats.TotalEarnedMON
+		totalBurnedNeuron = stats.TotalBurnedNeuron
 
-		earned, _ := new(big.Int).SetString(totalEarned, 10)
-		spent, _ := new(big.Int).SetString(totalSpent, 10)
+		// Get actual MON entry fees spent from match history
+		monSpent, err := h.repos.Agents.GetTotalMonSpent(ctx, address)
+		if err != nil {
+			log.Printf("GetAgentEconomics: GetTotalMonSpent: %v", err)
+		} else {
+			totalSpentMon = monSpent
+		}
+
+		earned, _ := new(big.Int).SetString(totalEarnedMon, 10)
+		spent, _ := new(big.Int).SetString(totalSpentMon, 10)
 		if earned == nil {
 			earned = big.NewInt(0)
 		}
@@ -193,7 +202,7 @@ func (h *AgentHandler) GetAgentEconomics(c *gin.Context) {
 			spent = big.NewInt(0)
 		}
 		pnl := new(big.Int).Sub(earned, spent)
-		netPnl = pnl.String()
+		netPnlMon = pnl.String()
 
 		if spent.Sign() > 0 {
 			earnedF, _ := new(big.Float).SetInt(earned).Float64()
@@ -213,10 +222,11 @@ func (h *AgentHandler) GetAgentEconomics(c *gin.Context) {
 	c.JSON(http.StatusOK, models.AgentEconomics{
 		AgentAddr:            address,
 		NeuronBalance:        "0", // On-chain query not available server-side
-		TotalSpent:           totalSpent,
-		TotalEarned:          totalEarned,
-		NetPnl:               netPnl,
+		TotalSpentMon:        totalSpentMon,
+		TotalEarnedMon:       totalEarnedMon,
+		NetPnlMon:            netPnlMon,
 		MatchRoi:             matchRoi,
+		TotalBurnedNeuron:    totalBurnedNeuron,
 		BountyRoi:            0,
 		BountiesParticipated: bountiesPlayed,
 		BountiesWon:          bountiesWon,

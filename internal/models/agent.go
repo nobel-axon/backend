@@ -114,10 +114,11 @@ type LeaderboardEntry struct {
 type AgentEconomics struct {
 	AgentAddr            string  `json:"agentAddr"`
 	NeuronBalance        string  `json:"neuronBalance"`
-	TotalSpent           string  `json:"totalSpent"`
-	TotalEarned          string  `json:"totalEarned"`
-	NetPnl               string  `json:"netPnl"`
+	TotalSpentMon        string  `json:"totalSpentMon"`
+	TotalEarnedMon       string  `json:"totalEarnedMon"`
+	NetPnlMon            string  `json:"netPnlMon"`
 	MatchRoi             float64 `json:"matchRoi"`
+	TotalBurnedNeuron    string  `json:"totalBurnedNeuron"`
 	BountyRoi            float64 `json:"bountyRoi"`
 	BountiesParticipated int     `json:"bountiesParticipated"`
 	BountiesWon          int     `json:"bountiesWon"`

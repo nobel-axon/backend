@@ -7,6 +7,7 @@ import (
 
 // Repositories contains all repository instances.
 type Repositories struct {
+	database      *db.DB
 	Matches       *MatchRepository
 	Answers       *AnswerRepository
 	Agents        *AgentRepository
@@ -21,9 +22,15 @@ type Repositories struct {
 	MatchRefunds  *MatchRefundRepository
 }
 
+// DB returns the underlying database connection.
+func (r *Repositories) DB() *db.DB {
+	return r.database
+}
+
 // NewRepositories creates all repository instances.
 func NewRepositories(database *db.DB) *Repositories {
 	return &Repositories{
+		database:      database,
 		Matches:       NewMatchRepository(database),
 		Answers:       NewAnswerRepository(database),
 		Agents:        NewAgentRepository(database),
