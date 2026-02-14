@@ -44,6 +44,8 @@ type AgentStatsResponse struct {
 	FirstSeen         string  `json:"firstSeen"`
 	ReputationScore   *int    `json:"reputationScore,omitempty"`
 	ERC8004Rating     *int    `json:"erc8004Rating,omitempty"`
+	BountiesPlayed    int     `json:"bountiesPlayed"`
+	BountiesWon       int     `json:"bountiesWon"`
 }
 
 // ToResponse converts AgentStats to AgentStatsResponse.
@@ -88,6 +90,9 @@ func (a *AgentStats) ToResponse() AgentStatsResponse {
 		s := a.ReputationScore
 		resp.ERC8004Rating = &s
 	}
+
+	resp.BountiesPlayed = a.BountiesPlayed
+	resp.BountiesWon = a.BountiesWon
 
 	return resp
 }

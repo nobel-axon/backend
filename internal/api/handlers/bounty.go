@@ -303,6 +303,13 @@ func (h *BountyHandler) RecordBountySettled(c *gin.Context) {
 		return
 	}
 
+	// Track bounty win in agent stats
+	if req.WinnerAddr != "" {
+		if err := h.repos.Agents.IncrementBountiesWon(ctx, req.WinnerAddr); err != nil {
+			log.Printf("Internal: bounty-settled IncrementBountiesWon failed: %v", err)
+		}
+	}
+
 	// Prefer reward from indexer payload; fall back to DB if absent
 	rewardAmount := req.Reward
 	if rewardAmount == "" {
@@ -379,6 +386,13 @@ func (h *BountyHandler) RecordBountyAnswerSubmitted(c *gin.Context) {
 	// Increment answer count on the bounty
 	if err := h.repos.Bounties.IncrementAnswerCount(ctx, req.BountyID); err != nil {
 		log.Printf("Internal: bounty-answer-submitted IncrementAnswerCount failed: %v", err)
+	}
+
+	// Track burned NEURON in agent stats
+	if req.AgentAddr != "" && neuronBurned != "0" {
+		if err := h.repos.Agents.AddBurnedNeuron(ctx, req.AgentAddr, neuronBurned); err != nil {
+			log.Printf("Internal: bounty-answer-submitted AddBurnedNeuron failed: %v", err)
+		}
 	}
 
 	h.hub.Broadcast(websocket.WSEvent{
@@ -475,6 +489,9 @@ func (h *BountyHandler) RecordBountyUpdate(c *gin.Context) {
 	if req.Agent != "" {
 		if err := h.repos.Bounties.AddPlayer(ctx, req.BountyID, req.Agent, req.AgentID, req.SnapshotReputation); err != nil {
 			log.Printf("Internal: bounty-update AddPlayer failed: %v", err)
+		}
+		if err := h.repos.Agents.IncrementBountiesPlayed(ctx, req.Agent); err != nil {
+			log.Printf("Internal: bounty-update IncrementBountiesPlayed failed: %v", err)
 		}
 		h.hub.Broadcast(websocket.WSEvent{
 			Type: websocket.EventAgentJoinedBounty,

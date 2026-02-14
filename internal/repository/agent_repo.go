@@ -348,6 +348,32 @@ func (r *AgentRepository) GetTotalMonSpent(ctx context.Context, agentAddr string
 	return total.String, nil
 }
 
+// IncrementBountiesPlayed increments the bounties played count for an agent.
+func (r *AgentRepository) IncrementBountiesPlayed(ctx context.Context, agentAddr string) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO app_agent_stats (agent_addr, bounties_played, last_active)
+		VALUES (LOWER($1), 1, NOW())
+		ON CONFLICT (agent_addr) DO UPDATE SET
+			bounties_played = app_agent_stats.bounties_played + 1,
+			last_active = NOW()`,
+		agentAddr,
+	)
+	return err
+}
+
+// IncrementBountiesWon increments the bounties won count for an agent.
+func (r *AgentRepository) IncrementBountiesWon(ctx context.Context, agentAddr string) error {
+	_, err := r.db.ExecContext(ctx,
+		`INSERT INTO app_agent_stats (agent_addr, bounties_won, last_active)
+		VALUES (LOWER($1), 1, NOW())
+		ON CONFLICT (agent_addr) DO UPDATE SET
+			bounties_won = app_agent_stats.bounties_won + 1,
+			last_active = NOW()`,
+		agentAddr,
+	)
+	return err
+}
+
 // AddBurnedNeuron adds to the total burned neuron for an agent.
 func (r *AgentRepository) AddBurnedNeuron(ctx context.Context, agentAddr string, amount string) error {
 	amountBig, ok := new(big.Int).SetString(amount, 10)
