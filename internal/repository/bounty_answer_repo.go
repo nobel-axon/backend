@@ -25,8 +25,8 @@ func (r *BountyAnswerRepository) Create(ctx context.Context, answer *models.Boun
 	err := r.db.GetContext(ctx, &id,
 		`INSERT INTO app_bounty_answers (bounty_id, agent_addr, answer_text, reasoning, tx_hash, attempt_number, neuron_burned)
 		VALUES ($1, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT (bounty_id, agent_addr) DO UPDATE SET
-			answer_text = $3, reasoning = $4, tx_hash = $5, attempt_number = $6, neuron_burned = $7
+		ON CONFLICT (bounty_id, agent_addr, attempt_number) DO UPDATE SET
+			answer_text = $3, reasoning = $4, tx_hash = $5, neuron_burned = $7
 		RETURNING id`,
 		answer.BountyID, answer.AgentAddr, answer.AnswerText, answer.Reasoning, answer.TxHash,
 		answer.AttemptNumber, answer.NeuronBurned,
@@ -44,13 +44,13 @@ func (r *BountyAnswerRepository) GetByBounty(ctx context.Context, bountyID int64
 	return answers, err
 }
 
-// UpdateEvaluation updates the evaluation result for a bounty answer.
-func (r *BountyAnswerRepository) UpdateEvaluation(ctx context.Context, bountyID int64, agentAddr string, totalScore int, agreement string, evaluations json.RawMessage) error {
+// UpdateEvaluation updates the evaluation result for a specific bounty answer attempt.
+func (r *BountyAnswerRepository) UpdateEvaluation(ctx context.Context, bountyID int64, agentAddr string, attemptNumber int, totalScore int, agreement string, evaluations json.RawMessage) error {
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE app_bounty_answers SET
-			total_score = $3, agreement = $4, evaluations = $5, evaluated_at = NOW()
-		WHERE bounty_id = $1 AND LOWER(agent_addr) = LOWER($2)`,
-		bountyID, agentAddr, totalScore, agreement, evaluations,
+			total_score = $4, agreement = $5, evaluations = $6, evaluated_at = NOW()
+		WHERE bounty_id = $1 AND LOWER(agent_addr) = LOWER($2) AND attempt_number = $3`,
+		bountyID, agentAddr, attemptNumber, totalScore, agreement, evaluations,
 	)
 	return err
 }

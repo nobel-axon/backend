@@ -207,6 +207,8 @@ func (r *AgentRepository) GetLeaderboard(ctx context.Context, params models.Lead
 			TotalEarnedMON:    s.TotalEarnedMON,
 			TotalBurnedNeuron: s.TotalBurnedNeuron,
 			ReputationScore:   s.ReputationScore,
+			BountiesPlayed:    s.BountiesPlayed,
+			BountiesWon:       s.BountiesWon,
 		}
 	}
 
@@ -229,13 +231,13 @@ func (r *AgentRepository) UpdateLastActive(ctx context.Context, agentAddr string
 	return err
 }
 
-// UpdateReputation updates the reputation score and feedback count for an agent.
+// UpdateReputation updates the reputation score (running average) and feedback count for an agent.
 func (r *AgentRepository) UpdateReputation(ctx context.Context, agentAddr string, score int) error {
 	_, err := r.db.ExecContext(ctx,
 		`INSERT INTO app_agent_stats (agent_addr, reputation_score, reputation_feedback_count, erc8004_registered, last_active)
 		VALUES (LOWER($1), $2, 1, TRUE, NOW())
 		ON CONFLICT (agent_addr) DO UPDATE SET
-			reputation_score = app_agent_stats.reputation_score + $2,
+			reputation_score = (app_agent_stats.reputation_score * app_agent_stats.reputation_feedback_count + $2) / (app_agent_stats.reputation_feedback_count + 1),
 			reputation_feedback_count = app_agent_stats.reputation_feedback_count + 1,
 			erc8004_registered = TRUE,
 			last_active = NOW()`,

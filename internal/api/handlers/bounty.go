@@ -781,11 +781,12 @@ func (h *BountyHandler) RecordBountyClaim(c *gin.Context) {
 
 // BountyAnswerResultRequest is the request from Chief after evaluating a bounty answer.
 type BountyAnswerResultRequest struct {
-	BountyID    int64           `json:"bountyId" binding:"required"`
-	AgentAddr   string          `json:"agentAddr" binding:"required"`
-	TotalScore  int             `json:"totalScore"`
-	Agreement   string          `json:"agreement"`
-	Evaluations json.RawMessage `json:"evaluations,omitempty"`
+	BountyID      int64           `json:"bountyId" binding:"required"`
+	AgentAddr     string          `json:"agentAddr" binding:"required"`
+	AttemptNumber int             `json:"attemptNumber"`
+	TotalScore    int             `json:"totalScore"`
+	Agreement     string          `json:"agreement"`
+	Evaluations   json.RawMessage `json:"evaluations,omitempty"`
 }
 
 // RecordBountyAnswerResult handles POST /internal/bounty-answer-result
@@ -797,8 +798,13 @@ func (h *BountyHandler) RecordBountyAnswerResult(c *gin.Context) {
 		return
 	}
 
+	attemptNum := req.AttemptNumber
+	if attemptNum <= 0 {
+		attemptNum = 1
+	}
+
 	ctx := c.Request.Context()
-	if err := h.repos.BountyAnswers.UpdateEvaluation(ctx, req.BountyID, req.AgentAddr, req.TotalScore, req.Agreement, req.Evaluations); err != nil {
+	if err := h.repos.BountyAnswers.UpdateEvaluation(ctx, req.BountyID, req.AgentAddr, attemptNum, req.TotalScore, req.Agreement, req.Evaluations); err != nil {
 		log.Printf("Internal: failed to update bounty answer evaluation bountyId=%d agent=%s: %v", req.BountyID, req.AgentAddr, err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update evaluation"})
 		return

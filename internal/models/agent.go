@@ -113,6 +113,8 @@ type LeaderboardEntry struct {
 	TotalEarnedMON    string  `json:"totalEarnedMon"`
 	TotalBurnedNeuron string  `json:"totalBurnedNeuron"`
 	ReputationScore   int     `json:"reputationScore,omitempty"`
+	BountiesPlayed    int     `json:"bountiesPlayed"`
+	BountiesWon       int     `json:"bountiesWon"`
 }
 
 // AgentEconomics represents the economic metrics for an agent.
