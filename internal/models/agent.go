@@ -22,6 +22,7 @@ type AgentStats struct {
 	ReputationScore        int           `db:"reputation_score" json:"-"`
 	ReputationFeedbackCnt  int           `db:"reputation_feedback_count" json:"-"`
 	ERC8004Registered      bool          `db:"erc8004_registered" json:"-"`
+	ERC8004AgentID         sql.NullInt64 `db:"erc8004_agent_id" json:"-"`
 	BountiesPlayed         int           `db:"bounties_played" json:"-"`
 	BountiesWon            int           `db:"bounties_won" json:"-"`
 }
