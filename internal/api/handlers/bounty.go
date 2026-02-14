@@ -31,9 +31,11 @@ func NewBountyHandler(repos *repository.Repositories, hub *websocket.Hub, chiefC
 }
 
 // ListBounties handles GET /api/bounties
+// By default, excludes rejected and pending bounties unless explicitly requested.
 func (h *BountyHandler) ListBounties(c *gin.Context) {
 	phase := c.Query("phase")
 	category := c.Query("category")
+	includeRejected := c.Query("include_rejected") == "true"
 	limit := 50
 	offset := 0
 
@@ -64,9 +66,13 @@ func (h *BountyHandler) ListBounties(c *gin.Context) {
 		total, _ = h.repos.Bounties.CountTotal(ctx)
 	}
 
-	responses := make([]models.BountyResponse, len(bounties))
-	for i, b := range bounties {
-		responses[i] = b.ToResponse()
+	// Filter out rejected/pending bounties by default
+	responses := make([]models.BountyResponse, 0, len(bounties))
+	for _, b := range bounties {
+		if !includeRejected && (b.Phase == "rejected" || b.Phase == "pending") {
+			continue
+		}
+		responses = append(responses, b.ToResponse())
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -182,7 +188,7 @@ func (h *BountyHandler) CreateBounty(c *gin.Context) {
 		PoolTotal:       "0",
 		MinRating:       minRating,
 		MaxParticipants: maxPart,
-		Phase:           "active",
+		Phase:           "pending",
 		Deadline:        sql.NullTime{Time: deadline, Valid: true},
 	}
 
@@ -253,6 +259,7 @@ func (h *BountyHandler) GetBountyStats(c *gin.Context) {
 type InternalBountySettledRequest struct {
 	BountyID     int64  `json:"bountyId" binding:"required"`
 	WinnerAddr   string `json:"winnerAddr"`
+	Reward       string `json:"reward"`
 	SettleTxHash string `json:"settleTxHash"`
 }
 
@@ -272,10 +279,12 @@ func (h *BountyHandler) RecordBountySettled(c *gin.Context) {
 		return
 	}
 
-	// Fetch pool_total for the WS broadcast
-	var rewardAmount string
-	if bounty, err := h.repos.Bounties.GetByID(ctx, req.BountyID); err == nil && bounty != nil {
-		rewardAmount = bounty.PoolTotal
+	// Prefer reward from indexer payload; fall back to DB if absent
+	rewardAmount := req.Reward
+	if rewardAmount == "" {
+		if bounty, err := h.repos.Bounties.GetByID(ctx, req.BountyID); err == nil && bounty != nil {
+			rewardAmount = bounty.PoolTotal
+		}
 	}
 
 	h.hub.Broadcast(websocket.WSEvent{
@@ -393,10 +402,10 @@ func (h *BountyHandler) RecordReputationUpdated(c *gin.Context) {
 	}
 
 	h.hub.Broadcast(websocket.WSEvent{
-		Type: "reputation_updated",
-		Data: map[string]interface{}{
-			"agentAddr": req.AgentAddr,
-			"score":     req.Score,
+		Type: websocket.EventReputationUpdated,
+		Data: websocket.ReputationUpdatedData{
+			AgentAddr: req.AgentAddr,
+			Score:     req.Score,
 		},
 	})
 
@@ -405,7 +414,9 @@ func (h *BountyHandler) RecordReputationUpdated(c *gin.Context) {
 
 // BountyUpdateRequest is the generic bounty update from the indexer.
 // The indexer sends different event shapes through the same endpoint:
-// - BountyCreated: bountyId, phase:"active", creator, reward, question, category, difficulty, minRating, deadline, maxAgents, baseAnswerFee
+// - BountyCreated: bountyId, phase:"pending", creator, reward, question, category, difficulty, minRating, deadline, maxAgents, baseAnswerFee
+// - BountyApproved: bountyId, phase:"active"
+// - BountyRejected: bountyId, phase:"rejected", rejectionReason
 // - AgentJoinedBounty: bountyId, agent, agentId, agentCount, snapshotReputation
 type BountyUpdateRequest struct {
 	BountyID           int64  `json:"bountyId" binding:"required"`
@@ -423,6 +434,7 @@ type BountyUpdateRequest struct {
 	AgentCount         int    `json:"agentCount"`
 	BaseAnswerFee      string `json:"baseAnswerFee"`
 	SnapshotReputation string `json:"snapshotReputation"`
+	RejectionReason    string `json:"rejectionReason"`
 }
 
 // RecordBountyUpdate handles POST /internal/bounty-update
@@ -459,7 +471,60 @@ func (h *BountyHandler) RecordBountyUpdate(c *gin.Context) {
 		return
 	}
 
-	// Otherwise upsert the bounty record
+	// Handle phase transitions for existing bounties (approved/rejected)
+	if req.Phase == "active" && req.Creator == "" {
+		// BountyApproved event — update phase and approved_at
+		now := time.Now()
+		if err := h.repos.Bounties.UpdatePhase(ctx, req.BountyID, "active"); err != nil {
+			log.Printf("Internal: bounty-update phase->active failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to approve bounty"})
+			return
+		}
+		if err := h.repos.Bounties.SetApprovedAt(ctx, req.BountyID, now); err != nil {
+			log.Printf("Internal: bounty-update SetApprovedAt failed: %v", err)
+		}
+
+		// Broadcast approval WS event
+		if bounty, err := h.repos.Bounties.GetByID(ctx, req.BountyID); err == nil && bounty != nil {
+			h.hub.Broadcast(websocket.WSEvent{
+				Type: websocket.EventBountyApproved,
+				Data: websocket.BountyApprovedData{
+					BountyID: bounty.BountyID,
+					Bounty:   bounty.ToResponse(),
+				},
+			})
+		}
+
+		c.JSON(http.StatusOK, gin.H{"status": "approved", "bountyId": req.BountyID})
+		return
+	}
+
+	if req.Phase == "rejected" {
+		// BountyRejected event — update phase and rejection info
+		now := time.Now()
+		if err := h.repos.Bounties.UpdatePhase(ctx, req.BountyID, "rejected"); err != nil {
+			log.Printf("Internal: bounty-update phase->rejected failed: %v", err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to reject bounty"})
+			return
+		}
+		if err := h.repos.Bounties.SetRejectedAt(ctx, req.BountyID, now, req.RejectionReason); err != nil {
+			log.Printf("Internal: bounty-update SetRejectedAt failed: %v", err)
+		}
+
+		h.hub.Broadcast(websocket.WSEvent{
+			Type: websocket.EventBountyRejected,
+			Data: websocket.BountyRejectedData{
+				BountyID: req.BountyID,
+				Reason:   req.RejectionReason,
+			},
+		})
+
+		log.Printf("Internal: bounty %d rejected: %s", req.BountyID, req.RejectionReason)
+		c.JSON(http.StatusOK, gin.H{"status": "rejected", "bountyId": req.BountyID})
+		return
+	}
+
+	// Otherwise upsert the bounty record (BountyCreated — starts as pending)
 	var deadline sql.NullTime
 	if req.Deadline != "" {
 		if t, err := time.Parse(time.RFC3339, req.Deadline); err == nil {
@@ -489,16 +554,8 @@ func (h *BountyHandler) RecordBountyUpdate(c *gin.Context) {
 		return
 	}
 
-	// Broadcast appropriate WS event
-	if req.Phase == "active" {
-		h.hub.Broadcast(websocket.WSEvent{
-			Type: websocket.EventBountyCreated,
-			Data: bounty.ToResponse(),
-		})
-	}
-
-	// Forward to Chief for bounty lifecycle management
-	if req.Phase == "active" && h.chiefClient != nil {
+	// Forward to Chief for bounty lifecycle management (pending bounties need screening)
+	if req.Phase == "pending" && h.chiefClient != nil {
 		var deadlineUnix float64
 		if deadline.Valid {
 			deadlineUnix = float64(deadline.Time.Unix())

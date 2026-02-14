@@ -27,6 +27,9 @@ type Bounty struct {
 	SettleTxHash    sql.NullString `db:"settle_tx_hash" json:"-"`
 	CreatedAt       time.Time      `db:"created_at" json:"createdAt"`
 	SettledAt       sql.NullTime   `db:"settled_at" json:"-"`
+	ApprovedAt      sql.NullTime   `db:"approved_at" json:"-"`
+	RejectedAt      sql.NullTime   `db:"rejected_at" json:"-"`
+	RejectionReason sql.NullString `db:"rejection_reason" json:"-"`
 	UpdatedAt       time.Time      `db:"updated_at" json:"updatedAt"`
 }
 
@@ -51,6 +54,9 @@ type BountyResponse struct {
 	SettleTxHash    *string `json:"settleTxHash,omitempty"`
 	CreatedAt       string  `json:"createdAt"`
 	SettledAt       *string `json:"settledAt,omitempty"`
+	ApprovedAt      *string `json:"approvedAt,omitempty"`
+	RejectedAt      *string `json:"rejectedAt,omitempty"`
+	RejectionReason *string `json:"rejectionReason,omitempty"`
 }
 
 // ToResponse converts a Bounty to a BountyResponse.
@@ -88,6 +94,17 @@ func (b *Bounty) ToResponse() BountyResponse {
 	if b.SettledAt.Valid {
 		s := b.SettledAt.Time.Format(time.RFC3339)
 		resp.SettledAt = &s
+	}
+	if b.ApprovedAt.Valid {
+		s := b.ApprovedAt.Time.Format(time.RFC3339)
+		resp.ApprovedAt = &s
+	}
+	if b.RejectedAt.Valid {
+		s := b.RejectedAt.Time.Format(time.RFC3339)
+		resp.RejectedAt = &s
+	}
+	if b.RejectionReason.Valid {
+		resp.RejectionReason = &b.RejectionReason.String
 	}
 	return resp
 }

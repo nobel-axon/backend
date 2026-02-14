@@ -37,15 +37,18 @@ const (
 	EventLobbyHeartbeat = "lobby_heartbeat"
 
 	// Bounty events (V2)
-	EventBountyCreated         = "bounty_created"
 	EventBountySettled         = "bounty_settled"
 	EventBountyAnswerSubmitted = "bounty_answer_submitted"
 	EventAgentJoinedBounty     = "bounty_agent_joined"
+	EventPersonalitiesAssigned = "personalities_assigned"
+	EventAnswerRevealed        = "answer_revealed"
 	EventReputationUpdated     = "reputation_updated"
 	EventWinnerRewardClaimed   = "winner_reward_claimed"
 	EventProportionalClaimed   = "proportional_claimed"
 	EventRefundClaimed         = "refund_claimed"
 	EventBountyAnswerEvaluated = "bounty_answer_evaluated"
+	EventBountyApproved        = "bounty_approved"
+	EventBountyRejected        = "bounty_rejected"
 )
 
 // MatchCreatedData is the data for match_created events.
@@ -140,6 +143,28 @@ type LobbyGroupExpiredData struct {
 	GroupID string `json:"groupId"`
 }
 
+// MatchBroadcastData wraps a MatchResponse with its MatchID for hub dedup.
+// The hub extracts MatchID from this struct; the full match response is nested
+// under the "match" key for the frontend.
+type MatchBroadcastData struct {
+	MatchID int64       `json:"matchId"`
+	Match   interface{} `json:"match"`
+}
+
+// PersonalitiesAssignedData is the data for personalities_assigned events.
+type PersonalitiesAssignedData struct {
+	MatchID       int64           `json:"matchId"`
+	Personalities json.RawMessage `json:"personalities"`
+	JudgePanel    json.RawMessage `json:"judgePanel"`
+}
+
+// AnswerRevealedData is the data for answer_revealed events.
+type AnswerRevealedData struct {
+	MatchID int64  `json:"matchId"`
+	Answer  string `json:"answer"`
+	Salt    string `json:"salt"`
+}
+
 // BountySettledData is the data for bounty_settled events.
 type BountySettledData struct {
 	BountyID     int64  `json:"bountyId"`
@@ -193,4 +218,16 @@ type BountyAnswerEvaluatedData struct {
 	AgentAddr  string `json:"agentAddr"`
 	TotalScore int    `json:"totalScore"`
 	Agreement  string `json:"agreement"`
+}
+
+// BountyApprovedData wraps the full BountyResponse for hub dedup.
+type BountyApprovedData struct {
+	BountyID int64       `json:"bountyId"`
+	Bounty   interface{} `json:"bounty"`
+}
+
+// BountyRejectedData is the data for bounty_rejected events.
+type BountyRejectedData struct {
+	BountyID int64  `json:"bountyId"`
+	Reason   string `json:"reason"`
 }

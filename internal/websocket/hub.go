@@ -146,6 +146,9 @@ func (h *Hub) dedupKey(event WSEvent) string {
 	switch d := event.Data.(type) {
 	case map[string]interface{}:
 		matchID = d["matchId"]
+		if matchID == nil {
+			matchID = d["bountyId"]
+		}
 		// For answer events, include agent so different agents aren't deduped.
 		if event.Type == "answer_submitted" || event.Type == "answer_verified" {
 			if a, ok := d["agentAddr"]; ok {
@@ -171,8 +174,38 @@ func (h *Hub) dedupKey(event WSEvent) string {
 		agent = d.AgentAddr
 	case QuestionPostedData:
 		matchID = d.MatchID
+	case MatchBroadcastData:
+		matchID = d.MatchID
+	case PersonalitiesAssignedData:
+		matchID = d.MatchID
+	case AnswerRevealedData:
+		matchID = d.MatchID
 	case MatchTimeoutData:
 		matchID = d.MatchID
+	case BountySettledData:
+		matchID = d.BountyID
+	case BountyAnswerSubmittedData:
+		matchID = d.BountyID
+		agent = d.AgentAddr
+	case AgentJoinedBountyData:
+		matchID = d.BountyID
+		agent = d.AgentAddr
+	case BountyAnswerEvaluatedData:
+		matchID = d.BountyID
+		agent = d.AgentAddr
+	case BountyApprovedData:
+		matchID = d.BountyID
+	case BountyRejectedData:
+		matchID = d.BountyID
+	case WinnerRewardClaimedData:
+		matchID = d.BountyID
+	case ProportionalClaimedData:
+		matchID = d.BountyID
+		agent = d.Agent
+	case RefundClaimedData:
+		matchID = d.BountyID
+	case ReputationUpdatedData:
+		agent = d.AgentAddr
 	}
 
 	if agent != nil {

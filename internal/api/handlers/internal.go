@@ -202,7 +202,10 @@ func (h *InternalHandler) UpdateMatch(c *gin.Context) {
 	// Broadcast to WebSocket clients
 	h.hub.Broadcast(websocket.WSEvent{
 		Type: eventType,
-		Data: match.ToResponse(),
+		Data: websocket.MatchBroadcastData{
+			MatchID: match.MatchID,
+			Match:   match.ToResponse(),
+		},
 	})
 
 	c.JSON(http.StatusOK, gin.H{"status": "updated", "matchId": req.MatchID})
@@ -236,11 +239,11 @@ func (h *InternalHandler) StorePersonalities(c *gin.Context) {
 
 	// Broadcast to WebSocket clients
 	h.hub.Broadcast(websocket.WSEvent{
-		Type: "personalities_assigned",
-		Data: map[string]interface{}{
-			"matchId":       req.MatchID,
-			"personalities": req.Personalities,
-			"judgePanel":    req.JudgePanel,
+		Type: websocket.EventPersonalitiesAssigned,
+		Data: websocket.PersonalitiesAssignedData{
+			MatchID:       req.MatchID,
+			Personalities: req.Personalities,
+			JudgePanel:    req.JudgePanel,
 		},
 	})
 
@@ -277,7 +280,7 @@ func (h *InternalHandler) AddCommentary(c *gin.Context) {
 	// Broadcast to WebSocket clients
 	if commentary != nil {
 		h.hub.Broadcast(websocket.WSEvent{
-			Type: "commentary",
+			Type: websocket.EventCommentary,
 			Data: commentary.ToResponse(),
 		})
 	}
@@ -353,14 +356,14 @@ func (h *InternalHandler) RecordAnswerResult(c *gin.Context) {
 
 	// Broadcast to WebSocket clients
 	h.hub.Broadcast(websocket.WSEvent{
-		Type: "answer_verified",
-		Data: map[string]interface{}{
-			"matchId":       req.MatchID,
-			"agentAddr":     req.AgentAddr,
-			"attemptNumber": req.AttemptNumber,
-			"isCorrect":     req.IsCorrect,
-			"consensus":     req.Consensus,
-			"confidence":    req.Confidence,
+		Type: websocket.EventAnswerVerified,
+		Data: websocket.AnswerVerifiedData{
+			MatchID:       req.MatchID,
+			AgentAddr:     req.AgentAddr,
+			AttemptNumber: req.AttemptNumber,
+			IsCorrect:     req.IsCorrect,
+			Consensus:     req.Consensus,
+			Confidence:    req.Confidence,
 		},
 	})
 
@@ -446,10 +449,10 @@ func (h *InternalHandler) SettleMatch(c *gin.Context) {
 
 		// Broadcast cancellation/refund
 		h.hub.Broadcast(websocket.WSEvent{
-			Type: "match_cancelled",
-			Data: map[string]interface{}{
-				"matchId": req.MatchID,
-				"reason":  req.Reason,
+			Type: websocket.EventMatchCancelled,
+			Data: websocket.MatchCancelledData{
+				MatchID: req.MatchID,
+				Reason:  req.Reason,
 			},
 		})
 
@@ -482,18 +485,14 @@ func (h *InternalHandler) SettleMatch(c *gin.Context) {
 	}
 
 	// Broadcast settlement
-	settleData := map[string]interface{}{
-		"matchId":     req.MatchID,
-		"winnerAddr":  req.WinnerAddr,
-		"prizeMon":    req.PrizeMON,
-		"prizeNeuron": req.PrizeNeuron,
-	}
-	if req.SettleTxHash != "" {
-		settleData["settleTxHash"] = req.SettleTxHash
-	}
 	h.hub.Broadcast(websocket.WSEvent{
-		Type: "match_settled",
-		Data: settleData,
+		Type: websocket.EventMatchSettled,
+		Data: websocket.MatchSettledData{
+			MatchID:     req.MatchID,
+			WinnerAddr:  req.WinnerAddr,
+			PrizeMON:    req.PrizeMON,
+			PrizeNeuron: req.PrizeNeuron,
+		},
 	})
 
 	c.JSON(http.StatusOK, gin.H{"status": "settled"})
@@ -579,7 +578,7 @@ func (h *InternalHandler) RecordAnswerSubmitted(c *gin.Context) {
 
 	// Broadcast to WebSocket clients
 	h.hub.Broadcast(websocket.WSEvent{
-		Type: "answer_submitted",
+		Type: websocket.EventAnswerSubmitted,
 		Data: websocket.AnswerSubmittedData{
 			MatchID:       req.MatchID,
 			AgentAddr:     req.Agent,
@@ -633,11 +632,11 @@ func (h *InternalHandler) RecordAnswerRevealed(c *gin.Context) {
 
 	// Broadcast to WebSocket clients
 	h.hub.Broadcast(websocket.WSEvent{
-		Type: "answer_revealed",
-		Data: map[string]interface{}{
-			"matchId": req.MatchID,
-			"answer":  req.Answer,
-			"salt":    req.Salt,
+		Type: websocket.EventAnswerRevealed,
+		Data: websocket.AnswerRevealedData{
+			MatchID: req.MatchID,
+			Answer:  req.Answer,
+			Salt:    req.Salt,
 		},
 	})
 

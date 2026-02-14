@@ -5,6 +5,7 @@ import (
 	"context"
 	"database/sql"
 	"strconv"
+	"time"
 
 	"github.com/axon-arena/axon-server/internal/db"
 	"github.com/axon-arena/axon-server/internal/models"
@@ -78,7 +79,7 @@ func (r *BountyRepository) List(ctx context.Context, phase, category string, lim
 // UpdatePhase updates the phase of a bounty.
 func (r *BountyRepository) UpdatePhase(ctx context.Context, bountyID int64, phase string) error {
 	_, err := r.db.ExecContext(ctx,
-		`UPDATE app_bounties SET phase = $2 WHERE bounty_id = $1`,
+		`UPDATE app_bounties SET phase = $2, updated_at = NOW() WHERE bounty_id = $1`,
 		bountyID, phase,
 	)
 	return err
@@ -143,6 +144,24 @@ func (r *BountyRepository) Upsert(ctx context.Context, bounty *models.Bounty) er
 		bounty.BountyID, bounty.CreatorAddress, bounty.QuestionText, bounty.Category,
 		bounty.Difficulty, bounty.EntryFee, bounty.BaseAnswerFee, bounty.PoolTotal, bounty.MinRating,
 		bounty.MaxParticipants, bounty.PlayerCount, bounty.Phase, bounty.Deadline,
+	)
+	return err
+}
+
+// SetApprovedAt sets the approved_at timestamp for a bounty.
+func (r *BountyRepository) SetApprovedAt(ctx context.Context, bountyID int64, approvedAt time.Time) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE app_bounties SET approved_at = $2, updated_at = NOW() WHERE bounty_id = $1`,
+		bountyID, approvedAt,
+	)
+	return err
+}
+
+// SetRejectedAt sets the rejected_at timestamp and reason for a bounty.
+func (r *BountyRepository) SetRejectedAt(ctx context.Context, bountyID int64, rejectedAt time.Time, reason string) error {
+	_, err := r.db.ExecContext(ctx,
+		`UPDATE app_bounties SET rejected_at = $2, rejection_reason = $3, updated_at = NOW() WHERE bounty_id = $1`,
+		bountyID, rejectedAt, reason,
 	)
 	return err
 }
