@@ -439,11 +439,17 @@ func (h *BountyHandler) RecordReputationUpdated(c *gin.Context) {
 		return
 	}
 
+	newTotal, _, _, err := h.repos.Agents.GetReputation(c.Request.Context(), req.AgentAddr)
+	if err != nil {
+		log.Printf("Internal: reputation-updated could not read new total: %v", err)
+		newTotal = req.Score // fallback to delta
+	}
+
 	h.hub.Broadcast(websocket.WSEvent{
 		Type: websocket.EventReputationUpdated,
 		Data: websocket.ReputationUpdatedData{
 			AgentAddr: req.AgentAddr,
-			Score:     req.Score,
+			Score:     newTotal,
 		},
 	})
 
@@ -688,11 +694,17 @@ func (h *BountyHandler) RecordFeedbackSubmitted(c *gin.Context) {
 		return
 	}
 
+	newTotal, _, _, err := h.repos.Agents.GetReputation(c.Request.Context(), wallet)
+	if err != nil {
+		log.Printf("Internal: feedback-submitted could not read new total: %v", err)
+		newTotal = req.Value // fallback to delta
+	}
+
 	h.hub.Broadcast(websocket.WSEvent{
 		Type: websocket.EventReputationUpdated,
 		Data: websocket.ReputationUpdatedData{
 			AgentAddr: wallet,
-			Score:     req.Value,
+			Score:     newTotal,
 		},
 	})
 
