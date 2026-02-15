@@ -4,8 +4,19 @@ package models
 import (
 	"database/sql"
 	"encoding/json"
+	"strings"
 	"time"
 )
+
+// sanitizeString strips control characters (except \n, \t) from a string.
+func sanitizeString(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 && r != '\n' && r != '\t' {
+			return -1
+		}
+		return r
+	}, s)
+}
 
 // Bounty represents a bounty in the database.
 type Bounty struct {
@@ -64,7 +75,7 @@ func (b *Bounty) ToResponse() BountyResponse {
 	resp := BountyResponse{
 		BountyID:        b.BountyID,
 		CreatorAddr:     b.CreatorAddress,
-		QuestionText:    b.QuestionText,
+		QuestionText:    sanitizeString(b.QuestionText),
 		Difficulty:      b.Difficulty,
 		EntryFee:        b.EntryFee,
 		RewardAmount:    b.PoolTotal,
