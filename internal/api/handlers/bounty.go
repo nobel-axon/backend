@@ -126,7 +126,7 @@ func (h *BountyHandler) GetBounty(c *gin.Context) {
 		for _, a := range answers {
 			if a.AgentAddr == winnerAddr {
 				if !found || (a.TotalScore.Valid && a.TotalScore.Int32 > bestScore) {
-					bestAnswer = a.AnswerText
+					bestAnswer = models.SanitizeString(a.AnswerText)
 					if a.TotalScore.Valid {
 						bestScore = a.TotalScore.Int32
 					}

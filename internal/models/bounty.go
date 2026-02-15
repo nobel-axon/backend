@@ -8,8 +8,8 @@ import (
 	"time"
 )
 
-// sanitizeString strips control characters (except \n, \t) from a string.
-func sanitizeString(s string) string {
+// SanitizeString strips control characters (except \n, \t) from a string.
+func SanitizeString(s string) string {
 	return strings.Map(func(r rune) rune {
 		if r < 0x20 && r != '\n' && r != '\t' {
 			return -1
@@ -75,7 +75,7 @@ func (b *Bounty) ToResponse() BountyResponse {
 	resp := BountyResponse{
 		BountyID:        b.BountyID,
 		CreatorAddr:     b.CreatorAddress,
-		QuestionText:    sanitizeString(b.QuestionText),
+		QuestionText:    SanitizeString(b.QuestionText),
 		Difficulty:      b.Difficulty,
 		EntryFee:        b.EntryFee,
 		RewardAmount:    b.PoolTotal,
@@ -87,7 +87,7 @@ func (b *Bounty) ToResponse() BountyResponse {
 		CreatedAt:       b.CreatedAt.Format(time.RFC3339),
 	}
 	if b.Category.Valid {
-		resp.Category = b.Category.String
+		resp.Category = SanitizeString(b.Category.String)
 	}
 	if b.Deadline.Valid {
 		s := b.Deadline.Time.Format(time.RFC3339)
@@ -115,7 +115,8 @@ func (b *Bounty) ToResponse() BountyResponse {
 		resp.RejectedAt = &s
 	}
 	if b.RejectionReason.Valid {
-		resp.RejectionReason = &b.RejectionReason.String
+		s := SanitizeString(b.RejectionReason.String)
+		resp.RejectionReason = &s
 	}
 	return resp
 }
@@ -159,20 +160,20 @@ func (a *BountyAnswer) ToResponse() BountyAnswerResponse {
 		ID:            a.ID,
 		BountyID:      a.BountyID,
 		AgentAddr:     a.AgentAddr,
-		AnswerText:    a.AnswerText,
+		AnswerText:    SanitizeString(a.AnswerText),
 		AttemptNumber: a.AttemptNumber,
 		NeuronBurned:  a.NeuronBurned,
 		SubmittedAt:   a.SubmittedAt.Format(time.RFC3339),
 	}
 	if a.Reasoning.Valid {
-		resp.Reasoning = a.Reasoning.String
+		resp.Reasoning = SanitizeString(a.Reasoning.String)
 	}
 	if a.TotalScore.Valid {
 		v := int(a.TotalScore.Int32)
 		resp.TotalScore = &v
 	}
 	if a.Agreement.Valid {
-		resp.Agreement = a.Agreement.String
+		resp.Agreement = SanitizeString(a.Agreement.String)
 	}
 	if a.Evaluations != nil {
 		resp.Evaluations = a.Evaluations
