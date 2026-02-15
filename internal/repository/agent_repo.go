@@ -286,7 +286,7 @@ func (r *AgentRepository) GetWalletByERC8004AgentID(ctx context.Context, agentId
 }
 
 // GetReputationFromIndexer checks the indexer's chain tables for registration and feedback data.
-func (r *AgentRepository) GetReputationFromIndexer(ctx context.Context, agentAddr string) (int, int, bool) {
+func (r *AgentRepository) GetReputationFromIndexer(ctx context.Context, agentAddr string) (int, int, bool, int64) {
 	// Check registration
 	var registered bool
 	var agentId int64
@@ -304,11 +304,11 @@ func (r *AgentRepository) GetReputationFromIndexer(ctx context.Context, agentAdd
 			agentId,
 		).Scan(&count, &totalScore)
 		if err == nil {
-			return int(totalScore), count, registered
+			return int(totalScore), count, registered, agentId
 		}
-		return 0, 0, registered
+		return 0, 0, registered, agentId
 	}
-	return 0, 0, false
+	return 0, 0, false, 0
 }
 
 // GetWalletByERC8004AgentIDFromIndexer looks up the agent's wallet from the indexer's chain_agent_registered table.

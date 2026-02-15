@@ -188,6 +188,7 @@ type ReputationResponse struct {
 	ReputationScore       int    `json:"reputationScore"`
 	ReputationFeedbackCnt int    `json:"reputationFeedbackCount"`
 	ERC8004Registered     bool   `json:"erc8004Registered"`
+	ERC8004AgentID        int64  `json:"erc8004AgentId,omitempty"`
 	BountiesPlayed        int    `json:"bountiesPlayed"`
 	BountiesWon           int    `json:"bountiesWon"`
 }

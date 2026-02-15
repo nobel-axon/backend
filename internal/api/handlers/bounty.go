@@ -219,13 +219,14 @@ func (h *BountyHandler) GetAgentReputation(c *gin.Context) {
 	if err != nil {
 		if err == sql.ErrNoRows {
 			// Check indexer tables for ERC-8004 registration and reputation data
-			idxScore, idxCount, idxReg := h.repos.Agents.GetReputationFromIndexer(ctx, address)
+			idxScore, idxCount, idxReg, idxAgentID := h.repos.Agents.GetReputationFromIndexer(ctx, address)
 			if idxReg || idxCount > 0 {
 				c.JSON(http.StatusOK, models.ReputationResponse{
 					AgentAddr:             address,
 					ReputationScore:       idxScore,
 					ReputationFeedbackCnt: idxCount,
 					ERC8004Registered:     idxReg,
+					ERC8004AgentID:        idxAgentID,
 					BountiesPlayed:        bountiesPlayed,
 					BountiesWon:           bountiesWon,
 				})
@@ -243,11 +244,15 @@ func (h *BountyHandler) GetAgentReputation(c *gin.Context) {
 		return
 	}
 
+	// Fetch ERC-8004 agent ID from app_agent_stats
+	agentID, _ := h.repos.Agents.GetERC8004AgentID(ctx, address)
+
 	c.JSON(http.StatusOK, models.ReputationResponse{
 		AgentAddr:             address,
 		ReputationScore:       score,
 		ReputationFeedbackCnt: feedbackCount,
 		ERC8004Registered:     registered,
+		ERC8004AgentID:        agentID,
 		BountiesPlayed:        bountiesPlayed,
 		BountiesWon:           bountiesWon,
 	})
